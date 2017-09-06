@@ -33,11 +33,12 @@ if prune_max:
 
 new_files = []
 size = len(files)
+acc_size = 0
 for x in range(size):
     file_path = files[x]
-    file_path = file_path.split(',')[0]
+    file_path = file_path.split(',')
     output = subprocess.check_output(
-        ['soxi -D \"%s\"' % file_path.strip()],
+        ['soxi -D \"%s\"' % file_path[0].strip()],
         shell=True
     )
     duration = float(output)
@@ -50,23 +51,25 @@ for x in range(size):
             if duration > args.max_duration:
                 duration_fit = False
         if duration_fit:
-            new_files.append((files[x], duration))
+            new_files.append((file_path[0], file_path[1], duration))
+            acc_size += duration
     else:
-        new_files.append((files[x], duration))
+        new_files.append((file_path[0], file_path[1], duration))
     update_progress(x / float(size))
 
-print("\nSorting files by length...")
-
-
 def func(element):
-    return element[1]
+    return element[2]
 
-
+print("\nSorting files by length...")
 new_files.sort(key=func)
 
 print("Saving new manifest...")
 
 with io.FileIO(args.output_path, 'w') as f:
-    for file_path in new_files:
-        sample = file_path[0].strip() + '\n'
-        f.write(sample.encode('utf-8'))
+    for utt in new_files:
+        f.write(utt[0].strip().encode('utf-8'))
+        f.write(','.encode('utf-8'))
+        f.write(utt[1].strip().encode('utf-8'))
+        f.write('\n'.encode('utf-8'))
+
+print("total merged length: {} secs".format(acc_size))

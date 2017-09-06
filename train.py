@@ -192,7 +192,7 @@ def main():
                 }
                 for tag, val in info.items():
                     logger.scalar_summary(tag, val, i + 1)
-        if not args.no_bucketing and epoch != 0:
+        if not args.no_bucketing:# and epochs != 0:
             print("Using bucketing sampler for the following epochs")
             train_dataset = SpectrogramDatasetWithLength(audio_conf=audio_conf, manifest_filepath=args.train_manifest,
                                                          labels=labels,
@@ -377,8 +377,8 @@ def main():
         if best_wer is None or best_wer > wer:
             print("Found better validated model, saving to %s" % args.model_path)
             torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
-                                            wer_results=wer_results, cer_results=cer_results)
-                       , args.model_path)
+                                            wer_results=wer_results, cer_results=cer_results),
+                       args.model_path)
             best_wer = wer
 
         avg_loss = 0

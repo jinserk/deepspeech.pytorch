@@ -41,7 +41,7 @@ def get_utterances_from_stm(stm_file):
 
 
 def cut_utterance(src_sph_file, target_wav_file, start_time, end_time, sample_rate=16000):
-    subprocess.call(["sox {}  -r {} -b 16 -c 1 {} trim {} ={}".format(src_sph_file, str(sample_rate),
+    subprocess.call(["sox -V1 --norm {} -r {} -b 16 -c 1 {} trim {} ={}".format(src_sph_file, str(sample_rate),
                                                                       target_wav_file, start_time, end_time)],
                     shell=True)
 
@@ -54,13 +54,13 @@ def filter_short_utterances(utterance_info, min_len_sec=1.0):
     return utterance_info["end_time"] - utterance_info["start_time"] > min_len_sec
 
 
-def prepare_dir(ted_dir):
-    converted_dir = os.path.join(ted_dir, "converted")
+def prepare_dir(ted_dir, dst_dir):
+    #converted_dir = os.path.join(dst_dir, "converted")
     # directories to store converted wav files and their transcriptions
-    wav_dir = os.path.join(converted_dir, "wav")
+    wav_dir = os.path.join(dst_dir, "wav")
     if not os.path.exists(wav_dir):
         os.makedirs(wav_dir)
-    txt_dir = os.path.join(converted_dir, "txt")
+    txt_dir = os.path.join(dst_dir, "txt")
     if not os.path.exists(txt_dir):
         os.makedirs(txt_dir)
     counter = 0
@@ -92,14 +92,14 @@ def main():
         os.makedirs(target_dl_dir)
 
     target_unpacked_dir = os.path.join(target_dl_dir, "TEDLIUM_release2")
-    if args.tar_path and os.path.exists(args.tar_path):
-        target_file = args.tar_path
-    else:
-        print("Could not find downloaded TEDLIUM archive, Downloading corpus...")
-        wget.download(TED_LIUM_V2_DL_URL, target_dl_dir)
-        target_file = os.path.join(target_dl_dir, "TEDLIUM_release2.tar.gz")
-
     if not os.path.exists(target_unpacked_dir):
+        if args.tar_path and os.path.exists(args.tar_path):
+            target_file = args.tar_path
+        else:
+            print("Could not find downloaded TEDLIUM archive, Downloading corpus...")
+            wget.download(TED_LIUM_V2_DL_URL, target_dl_dir)
+            target_file = os.path.join(target_dl_dir, "TEDLIUM_release2.tar.gz")
+
         print("Unpacking corpus...")
         tar = tarfile.open(target_file)
         tar.extractall(target_dl_dir)
@@ -111,14 +111,18 @@ def main():
     val_ted_dir = os.path.join(target_unpacked_dir, "dev")
     test_ted_dir = os.path.join(target_unpacked_dir, "test")
 
-    prepare_dir(train_ted_dir)
-    prepare_dir(val_ted_dir)
-    prepare_dir(test_ted_dir)
-    print('Creating manifests...')
+    train_conv_dir = os.path.join(target_dl_dir, "train")
+    val_conv_dir = os.path.join(target_dl_dir, "val")
+    test_conv_dir = os.path.join(target_dl_dir, "test")
 
-    create_manifest(train_ted_dir, 'ted_train')
-    create_manifest(val_ted_dir, 'ted_val')
-    create_manifest(test_ted_dir, 'ted_test')
+    prepare_dir(train_ted_dir, train_conv_dir)
+    prepare_dir(val_ted_dir, val_conv_dir)
+    prepare_dir(test_ted_dir, test_conv_dir)
+
+    print('Creating manifests...')
+    create_manifest(train_conv_dir, target_dl_dir, 'ted_train')
+    create_manifest(val_conv_dir, target_dl_dir, 'ted_val')
+    create_manifest(test_conv_dir, target_dl_dir, 'ted_test')
 
 
 if __name__ == "__main__":

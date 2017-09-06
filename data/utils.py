@@ -3,6 +3,7 @@ from __future__ import print_function
 import fnmatch
 import io
 import os
+import glob
 
 import subprocess
 
@@ -12,12 +13,15 @@ def update_progress(progress):
                                                   progress * 100), end="")
 
 
-def create_manifest(data_path, tag, ordered=True):
-    manifest_path = '%s_manifest.csv' % tag
+def create_manifest(data_path, out_path, tag, ordered=True):
+    manifest_path = os.path.join(out_path, '%s_manifest.csv' % tag)
     file_paths = []
-    wav_files = [os.path.join(dirpath, f)
-                 for dirpath, dirnames, files in os.walk(data_path)
-                 for f in fnmatch.filter(files, '*.wav')]
+    #wav_files = [os.path.join(dirpath, f)
+    #             for dirpath, dirnames, files in os.walk(data_path)
+    #             for f in fnmatch.filter(files, '*.wav')]
+    print(data_path)
+    wav_files = [filename for filename in glob.iglob('{}/**/*.wav'.format(data_path), recursive=True)]
+
     size = len(wav_files)
     counter = 0
     for file_path in wav_files:
