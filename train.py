@@ -3,6 +3,7 @@ import errno
 import json
 import os
 import time
+import logging
 
 import torch
 from torch.autograd import Variable
@@ -57,6 +58,15 @@ parser.add_argument('--log_params', dest='log_params', action='store_true', help
 parser.add_argument('--no_bucketing', dest='no_bucketing', action='store_true',
                     help='Turn off bucketing and sample from dataset based on sequence length (smallest to largest)')
 
+# create logger
+log = logging.getLogger('deepspeech.pytorch')
+log.setLevel(logging.DEBUG)
+hdr = logging.StreamHandler()
+hdr.setLevel(logging.DEBUG)
+fmt = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
+hdr.setFormatter(fmt)
+log.addHandler(hdr)
+
 
 def to_np(x):
     return x.data.cpu().numpy()
@@ -104,7 +114,7 @@ def main():
             os.makedirs(args.log_dir)
         except OSError as e:
             if e.errno == errno.EEXIST:
-                print('Directory already exists.')
+                log.warn('Directory already exists: {}'.format(args.log_dir))
                 for file in os.listdir(args.log_dir):
                     file_path = os.path.join(args.log_dir, file)
                     try:
@@ -120,7 +130,7 @@ def main():
         os.makedirs(save_folder)
     except OSError as e:
         if e.errno == errno.EEXIST:
-            print('Directory already exists.')
+            log.warn('Directory already exists: {}'.format(save_folder))
         else:
             raise
     criterion = CTCLoss()
@@ -140,9 +150,9 @@ def main():
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
                                       normalize=True, augment=False)
     train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size,
-                                   num_workers=args.num_workers)
+                                   num_workers=args.num_workers, pin_memory=True)
     test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size,
-                                  num_workers=args.num_workers)
+                                  num_workers=args.num_workers, pin_memory=True)
 
     rnn_type = args.rnn_type.lower()
     assert rnn_type in supported_rnns, "rnn_type should be either lstm, rnn or gru"
@@ -158,7 +168,7 @@ def main():
     decoder = GreedyDecoder(labels)
 
     if args.continue_from:
-        print("Loading checkpoint model %s" % args.continue_from)
+        log.info("Loading checkpoint model %s" % args.continue_from)
         package = torch.load(args.continue_from)
         model.load_state_dict(package['state_dict'])
         optimizer.load_state_dict(package['optim_dict'])
@@ -193,7 +203,7 @@ def main():
                 for tag, val in info.items():
                     logger.scalar_summary(tag, val, i + 1)
         if not args.no_bucketing:# and epochs != 0:
-            print("Using bucketing sampler for the following epochs")
+            log.info("Using bucketing sampler for the following epochs")
             train_dataset = SpectrogramDatasetWithLength(audio_conf=audio_conf, manifest_filepath=args.train_manifest,
                                                          labels=labels,
                                                          normalize=True, augment=args.augment)
@@ -206,8 +216,8 @@ def main():
     if args.cuda:
         model = torch.nn.DataParallel(model).cuda()
 
-    print(model)
-    print("Number of parameters: %d" % DeepSpeech.get_param_size(model))
+    log.info(model)
+    log.info("Number of parameters: %d" % DeepSpeech.get_param_size(model))
 
     batch_time = AverageMeter()
     data_time = AverageMeter()
@@ -227,7 +237,7 @@ def main():
             targets = Variable(targets, requires_grad=False)
 
             if args.cuda:
-                inputs = inputs.cuda()
+                inputs = inputs.cuda(async=True)
 
             out = model(inputs)
             out = out.transpose(0, 1)  # TxNxH
@@ -241,7 +251,7 @@ def main():
             loss_sum = loss.data.sum()
             inf = float("inf")
             if loss_sum == inf or loss_sum == -inf:
-                print("WARNING: received an inf loss, setting loss value to 0")
+                log.warn("received an inf loss, setting loss value to 0")
                 loss_value = 0
             else:
                 loss_value = loss.data[0]
@@ -264,15 +274,15 @@ def main():
             batch_time.update(time.time() - end)
             end = time.time()
             if not args.silent:
-                print('Epoch: [{0}][{1}/{2}]\t'
-                      'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                      'Data {data_time.val:.3f} ({data_time.avg:.3f})\t'
-                      'Loss {loss.val:.4f} ({loss.avg:.4f})\t'.format(
+                log.info('Epoch {0:03d}: Batch {1:05d} / {2:05d}  '
+                      'Time {batch_time.val:6.3f} (avg {batch_time.avg:6.3f})  '
+                      'Data {data_time.val:6.3f} (avg {data_time.avg:6.3f})  '
+                      'Loss {loss.val:8.4f} (avg {loss.avg:8.4f})'.format(
                     (epoch + 1), (i + 1), len(train_loader), batch_time=batch_time,
                     data_time=data_time, loss=losses))
             if args.checkpoint_per_batch > 0 and i > 0 and (i + 1) % args.checkpoint_per_batch == 0:
                 file_path = '%s/deepspeech_checkpoint_epoch_%d_iter_%d.pth.tar' % (save_folder, epoch + 1, i + 1)
-                print("Saving checkpoint model to %s" % file_path)
+                log.info("Saving checkpoint model to %s" % file_path)
                 torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, iteration=i,
                                                 loss_results=loss_results,
                                                 wer_results=wer_results, cer_results=cer_results, avg_loss=avg_loss),
@@ -281,9 +291,8 @@ def main():
             del out
         avg_loss /= len(train_loader)
 
-        print('Training Summary Epoch: [{0}]\t'
-              'Average Loss {loss:.3f}\t'.format(
-            epoch + 1, loss=avg_loss))
+        log.info('Training Summary Epoch {0:03d}: '
+                 'Average Loss {loss:8.4f}'.format((epoch + 1), loss=avg_loss))
 
         start_iter = 0  # Reset start iteration for next epoch
         total_cer, total_wer = 0, 0
@@ -301,7 +310,7 @@ def main():
                 offset += size
 
             if args.cuda:
-                inputs = inputs.cuda()
+                inputs = inputs.cuda(async=True)
 
             out = model(inputs)
             out = out.transpose(0, 1)  # TxNxH
@@ -327,10 +336,9 @@ def main():
         loss_results[epoch] = avg_loss
         wer_results[epoch] = wer
         cer_results[epoch] = cer
-        print('Validation Summary Epoch: [{0}]\t'
-              'Average WER {wer:.3f}\t'
-              'Average CER {cer:.3f}\t'.format(
-            epoch + 1, wer=wer, cer=cer))
+        log.info('Validation Summary Epoch {0:03d}: '
+                 'Average WER {wer:7.3f}  '
+                 'Average CER {cer:7.3f}  '.format((epoch + 1), wer=wer, cer=cer))
 
         if args.visdom:
             # epoch += 1
@@ -372,10 +380,10 @@ def main():
         optim_state = optimizer.state_dict()
         optim_state['param_groups'][0]['lr'] = optim_state['param_groups'][0]['lr'] / args.learning_anneal
         optimizer.load_state_dict(optim_state)
-        print('Learning rate annealed to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
+        log.info('Learning rate annealed to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
 
         if best_wer is None or best_wer > wer:
-            print("Found better validated model, saving to %s" % args.model_path)
+            log.info("Found better validated model, saving to %s" % args.model_path)
             torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
                                             wer_results=wer_results, cer_results=cer_results),
                        args.model_path)
@@ -383,7 +391,7 @@ def main():
 
         avg_loss = 0
         if not args.no_bucketing and epoch == 0:
-            print("Switching to bucketing sampler for following epochs")
+            log.info("Switching to bucketing sampler for following epochs")
             train_dataset = SpectrogramDatasetWithLength(audio_conf=audio_conf, manifest_filepath=args.train_manifest,
                                                          labels=labels,
                                                          normalize=True, augment=args.augment)

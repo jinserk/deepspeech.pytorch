@@ -46,6 +46,31 @@ class InferenceBatchLogSoftmax(nn.Module):
             return input_
 
 
+class TemporalRowConvolution(nn.Module):
+    def __init__(self, input_size, kernel_size, stride=1, padding=0, feat_first=False, bias=False):
+        super(TemporalRowConvolution, self).__init__()
+        self.input_size = input_size
+        self.kernel_size = _single(kernel_size)
+        self.stride = _single(stride)
+        self.padding = _single(padding)
+        self.weight = nn.Parameter(torch.Tensor(input_size, 1, *kernal_size))
+        if bias:
+            self.bias = nn.Parameter(torch.Tensor(input_size))
+        else:
+            self.register_parameter('bias', None)
+        self.feat_first = feat_first
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        stdv = 1. / math.sqrt(self.kernel_size * self.input_size)
+        self.weight.data.uniform_(-stdv, stdv)
+        if self.bias is not None:
+            self.bias.data.uniform_(-stdv, stdv)
+
+    def forward(self, input_):
+        return nn._functions.thnn.auto.TemporalRowConvolution.apply(input_, kernel_size, stride, padding)
+
+
 class BatchRNN(nn.Module):
     def __init__(self, input_size, hidden_size, rnn_type=nn.LSTM, bidirectional=False, batch_norm=True):
         super(BatchRNN, self).__init__()

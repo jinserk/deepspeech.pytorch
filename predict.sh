@@ -1,8 +1,10 @@
 #!/bin/bash
 
-model="models/20170829/deepspeech_10.pth.tar"
+model="models/20170829/deepspeech_12.pth.tar"
 decoder="beam"
-cuda="yes"
+cuda="no"
+lm_path="lm/mozilla/lm.binary"
+trie_path="lm/mozilla/lm.trie"
 
 . parse_options.sh
 
@@ -14,9 +16,11 @@ if [ "$decoder" == "beam" ]; then
 		--model_path $model \
 		--decoder $decoder \
 		--beam_width 20 \
-		--lm_path lm/lm.binary \
-		--trie_path lm/lm.trie \
-		--lm_alpha 0.8 \
+		--lm_path $lm_path \
+		--trie_path $trie_path \
+		--lm_alpha 1.2 \
+		--lm_beta1 1.0 \
+		--lm_beta2 1.0 \
 		$cuda_opt \
 		--audio_path $wav
 else
