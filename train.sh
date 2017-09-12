@@ -1,6 +1,6 @@
 #!/bin/bash
 
-store_path="models/20170908"
+store_path="models/20170912"
 
 python train.py \
 	--train_manifest data/manifests/train.csv \
@@ -9,14 +9,13 @@ python train.py \
 	--augment \
 	--noise_dir data/noise \
 	--num_workers 16 \
-	--batch_size 16 \
+	--batch_size 12 \
 	--rnn_type gru \
-	--hidden_size 800 \
+	--hidden_size 1200 \
 	--hidden_layers 5 \
 	--epochs 100 \
 	--cuda \
 	--visdom \
-	--tensorboard \
 	--checkpoint \
 	--save_folder $store_path \
 	--model_path $store_path/deepspeech.final.pth.tar \

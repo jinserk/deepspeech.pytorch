@@ -14,14 +14,14 @@ windows = {'hamming': scipy.signal.hamming, 'hann': scipy.signal.hann, 'blackman
 
 
 def load_audio(path):
-    sound, _ = torchaudio.load(path)
+    sound, sample_rate = torchaudio.load(path)
     sound = sound.numpy()
     if len(sound.shape) > 1:
         if sound.shape[1] == 1:
             sound = sound.squeeze()
         else:
             sound = sound.mean(axis=1)  # multiple channels, average
-    return sound
+    return sound, sample_rate
 
 
 class AudioParser(object):
@@ -44,12 +44,16 @@ class NoiseInjection(object):
     def __init__(self,
                  path=None,
                  sample_rate=16000,
-                 noise_levels=(0, 0.5)):
+                 noise_levels=(0, 0.1)):
         """
         Adds noise to an input signal with specific SNR. Higher the noise level, the more noise added.
         Modified code from https://github.com/willfrey/audio/blob/master/torchaudio/transforms.py
         """
+        if not os.path.exists(path):
+            print("Directory doesn't exist: {}".format(path))
+            raise IOError
         self.paths = path is not None and librosa.util.find_files(path)
+        self.sample_rate = sample_rate
         self.noise_levels = noise_levels
 
     def inject_noise(self, data):
@@ -58,25 +62,17 @@ class NoiseInjection(object):
         return self.inject_noise_sample(data, noise_path, noise_level)
 
     def inject_noise_sample(self, data, noise_path, noise_level):
-        noise_src = load_audio(noise_path)
+        noise_src, sr = load_audio(noise_path)
+        noise_len = int(len(data) / self.sample_rate * sr * 1.1)
         noise_offset_fraction = np.random.rand()
-        noise_dst = np.zeros_like(data)
-        src_offset = int(len(noise_src) * noise_offset_fraction)
-        src_left = len(noise_src) - src_offset
-        dst_offset = 0
-        dst_left = len(data)
-        while dst_left > 0:
-            copy_size = min(dst_left, src_left)
-            np.copyto(noise_dst[dst_offset:dst_offset + copy_size],
-                      noise_src[src_offset:src_offset + copy_size])
-            if src_left > dst_left:
-                dst_left = 0
-            else:
-                dst_left -= copy_size
-                dst_offset += copy_size
-                src_left = len(noise_src)
-                src_offset = 0
-        data += noise_level * noise_dst
+        noise_offset = int(len(noise_src) * noise_offset_fraction)
+        if noise_len - noise_offset < noise_len:
+            noise_offset -= noise_len
+        if sr != self.sample_rate:
+            noise_dst = librosa.resample(noise_src[noise_offset:noise_offset+noise_len], sr, self.sample_rate)
+        else:
+            noise_dst = noise_src[noise_offset:noise_offset+noise_len]
+        data += noise_level * noise_dst[0:len(data)]
         return data
 
 
@@ -104,7 +100,7 @@ class SpectrogramParser(AudioParser):
         if self.augment:
             y = load_randomly_augmented_audio(audio_path, self.sample_rate)
         else:
-            y = load_audio(audio_path)
+            y, _ = load_audio(audio_path)
         if self.noiseInjector:
             add_noise = np.random.binomial(1, self.noise_prob)
             if add_noise:
@@ -216,7 +212,7 @@ def augment_audio_with_sox(path, sample_rate, tempo, gain):
                                                                             augmented_filename,
                                                                             " ".join(sox_augment_params))
         os.system(sox_params)
-        y = load_audio(augmented_filename)
+        y, _ = load_audio(augmented_filename)
         return y
 
 

@@ -10,9 +10,9 @@ from utils import update_progress
 
 parser = argparse.ArgumentParser(description='Merges all manifest CSV files in specified folder.')
 parser.add_argument('--merge_dir', default='manifests/', help='Path to all manifest files you want to merge')
-parser.add_argument('--min_duration', default=-1, type=int,
+parser.add_argument('--min_duration', default=-1, type=float,
                     help='Optionally prunes any samples shorter than the min duration (given in seconds, default off)')
-parser.add_argument('--max_duration', default=-1, type=int,
+parser.add_argument('--max_duration', default=-1, type=float,
                     help='Optionally prunes any samples longer than the max duration (given in seconds, default off)')
 parser.add_argument('--output_path', default='merged_manifest.csv', help='Output path to merged manifest')
 
@@ -27,9 +27,9 @@ for file in os.listdir(args.merge_dir):
 prune_min = args.min_duration >= 0
 prune_max = args.max_duration >= 0
 if prune_min:
-    print("Pruning files with minimum duration %d" % (args.min_duration))
+    print("Pruning files with minimum duration %f" % (args.min_duration))
 if prune_max:
-    print("Pruning files with  maximum duration of %d" % (args.max_duration))
+    print("Pruning files with  maximum duration of %f" % (args.max_duration))
 
 new_files = []
 size = len(files)
@@ -67,6 +67,13 @@ print("Saving new manifest...")
 
 with io.FileIO(args.output_path, 'w') as f:
     for utt in new_files:
+        f.write(utt[0].strip().encode('utf-8'))
+        f.write(','.encode('utf-8'))
+        f.write(utt[1].strip().encode('utf-8'))
+        f.write('\n'.encode('utf-8'))
+
+with io.FileIO(args.output_path+'.long', 'w') as f:
+    for utt in new_files[-100:]:
         f.write(utt[0].strip().encode('utf-8'))
         f.write(','.encode('utf-8'))
         f.write(utt[1].strip().encode('utf-8'))

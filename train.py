@@ -50,7 +50,7 @@ parser.add_argument('--noise_dir', default=None,
 parser.add_argument('--noise_prob', default=0.4, help='Probability of noise being added per sample')
 parser.add_argument('--noise_min', default=0.0,
                     help='Minimum noise level to sample from. (1.0 means all noise, not original signal)', type=float)
-parser.add_argument('--noise_max', default=0.5,
+parser.add_argument('--noise_max', default=0.1,
                     help='Maximum noise levels to sample from. Maximum 1.0', type=float)
 parser.add_argument('--tensorboard', dest='tensorboard', action='store_true', help='Turn on tensorboard graphing')
 parser.add_argument('--log_dir', default='visualize/deepspeech_final', help='Location of tensorboard log')
@@ -274,7 +274,7 @@ def main():
             batch_time.update(time.time() - end)
             end = time.time()
             if not args.silent:
-                log.info('Epoch {0:03d}: Batch {1:05d} / {2:05d}  '
+                log.info('Epoch {0:03d}:  Batch {1:06d} / {2:06d}  '
                       'Time {batch_time.val:6.3f} (avg {batch_time.avg:6.3f})  '
                       'Data {data_time.val:6.3f} (avg {data_time.avg:6.3f})  '
                       'Loss {loss.val:8.4f} (avg {loss.avg:8.4f})'.format(
@@ -291,7 +291,7 @@ def main():
             del out
         avg_loss /= len(train_loader)
 
-        log.info('Training Summary Epoch {0:03d}: '
+        log.info('Training Summary Epoch {0:03d}:  '
                  'Average Loss {loss:8.4f}'.format((epoch + 1), loss=avg_loss))
 
         start_iter = 0  # Reset start iteration for next epoch
@@ -336,7 +336,7 @@ def main():
         loss_results[epoch] = avg_loss
         wer_results[epoch] = wer
         cer_results[epoch] = cer
-        log.info('Validation Summary Epoch {0:03d}: '
+        log.info('Validation Summary Epoch {0:03d}:  '
                  'Average WER {wer:7.3f}  '
                  'Average CER {cer:7.3f}  '.format((epoch + 1), wer=wer, cer=cer))
 
