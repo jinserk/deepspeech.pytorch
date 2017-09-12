@@ -1,22 +1,19 @@
 #!/bin/bash
 
-store_path="models/20170908"
+store_path="models/20170911"
 
 python train.py \
-	--train_manifest data/manifests/train.csv \
-	--val data/manifests/val.csv \
+	--train_manifest data/swb/swb-train.csv \
+	--val data/swb/swb-dev.csv \
 	--sample_rate 8000 \
 	--augment \
-	--noise_dir data/noise \
-	--num_workers 16 \
-	--batch_size 16 \
+	--num_workers 4 \
+	--batch_size 64 \
 	--rnn_type gru \
 	--hidden_size 800 \
 	--hidden_layers 5 \
 	--epochs 100 \
-	--cuda \
 	--visdom \
-	--tensorboard \
 	--checkpoint \
 	--save_folder $store_path \
 	--model_path $store_path/deepspeech.final.pth.tar \

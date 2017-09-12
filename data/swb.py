@@ -18,41 +18,34 @@ import codecs
 
 sph2pipe_bin = "/d1/jbaik/kaldi/tools/sph2pipe_v2.5/sph2pipe"
 
-def _download_and_preprocess_data(data_dir):
+def _download_and_preprocess_data(data_dir, dst_dir):
     data_dir = os.path.join(data_dir, "LDC97S62")
 
     # Conditionally convert swb sph data to wav
-    _maybe_convert_wav(data_dir, "swb1_d1", "swb1_d1-wav")
-    _maybe_convert_wav(data_dir, "swb1_d2", "swb1_d2-wav")
-    _maybe_convert_wav(data_dir, "swb1_d3", "swb1_d3-wav")
-    _maybe_convert_wav(data_dir, "swb1_d4", "swb1_d4-wav")
+    _maybe_convert_wav(data_dir, "swb1_d1", dst_dir, "swb1-wav")
+    _maybe_convert_wav(data_dir, "swb1_d2", dst_dir, "swb1-wav")
+    _maybe_convert_wav(data_dir, "swb1_d3", dst_dir, "swb1-wav")
+    _maybe_convert_wav(data_dir, "swb1_d4", dst_dir, "swb1-wav")
 
     # Conditionally split wav data
-    d1 = _maybe_split_wav_and_sentences(data_dir, "swb_ms98_transcriptions", "swb1_d1-wav", "swb1_d1-split-wav")
-    d2 = _maybe_split_wav_and_sentences(data_dir, "swb_ms98_transcriptions", "swb1_d2-wav", "swb1_d2-split-wav")
-    d3 = _maybe_split_wav_and_sentences(data_dir, "swb_ms98_transcriptions", "swb1_d3-wav", "swb1_d3-split-wav")
-    d4 = _maybe_split_wav_and_sentences(data_dir, "swb_ms98_transcriptions", "swb1_d4-wav", "swb1_d4-split-wav")
+    d1 = _maybe_split_wav_and_sentences(data_dir, "swb_ms98_transcriptions", dst_dir, "swb1-wav", "swb1-split")
+    d2 = _maybe_split_wav_and_sentences(data_dir, "swb_ms98_transcriptions", dst_dir, "swb1-wav", "swb1-split")
+    d3 = _maybe_split_wav_and_sentences(data_dir, "swb_ms98_transcriptions", dst_dir, "swb1-wav", "swb1-split")
+    d4 = _maybe_split_wav_and_sentences(data_dir, "swb_ms98_transcriptions", dst_dir, "swb1-wav", "swb1-split")
 
     swb_files = d1.append(d2).append(d3).append(d4)
 
     train_files, dev_files, test_files = _split_sets(swb_files)
 
     # Write sets to disk as CSV files
-    train_files.to_csv(os.path.join(data_dir, "swb-train.csv"), index=False)
-    dev_files.to_csv(os.path.join(data_dir, "swb-dev.csv"), index=False)
-    test_files.to_csv(os.path.join(data_dir, "swb-test.csv"), index=False)
+    train_files.to_csv(os.path.join(dst_dir, "swb-train.csv"), header=False, index=False)
+    dev_files.to_csv(os.path.join(dst_dir, "swb-dev.csv"), header=False, index=False)
+    test_files.to_csv(os.path.join(dst_dir, "swb-test.csv"), header=False, index=False)
 
-def _maybe_convert_wav(data_dir, original_data, converted_data):
+def _maybe_convert_wav(data_dir, original_data, dst_dir, converted_data):
     source_dir = os.path.join(data_dir, original_data)
-    target_dir = os.path.join(data_dir, converted_data)
-
-    # Conditionally convert sph files to wav files
-    if os.path.exists(target_dir):
-        print("skipping maybe_convert_wav")
-        return
-
-    # Create target_dir
-    os.makedirs(target_dir)
+    target_dir = os.path.join(dst_dir, converted_data)
+    os.makedirs(target_dir, exist_ok=True)
 
     # Loop over sph files in source_dir and convert each to 16-bit PCM wav
     for root, dirnames, filenames in os.walk(source_dir):
@@ -62,7 +55,7 @@ def _maybe_convert_wav(data_dir, original_data, converted_data):
                 wav_filename = os.path.splitext(os.path.basename(sph_file))[0] + "-" + channel + ".wav"
                 wav_file = os.path.join(target_dir, wav_filename)
                 print("converting {} to {}".format(sph_file, wav_file))
-                subprocess.check_call(["sph2pipe", "-c", channel, "-p", "-f", "rif", sph_file, wav_file])
+                subprocess.check_call([sph2pipe_bin, "-c", channel, "-p", "-f", "rif", sph_file, wav_file])
 
 def _parse_transcriptions(trans_file):
     segments = []
@@ -94,60 +87,72 @@ def _parse_transcriptions(trans_file):
     return segments
 
 
-def _maybe_split_wav_and_sentences(data_dir, trans_data, original_data, converted_data):
+def _maybe_split_wav_and_sentences(data_dir, trans_data, dst_dir, original_data, converted_data):
     trans_dir = os.path.join(data_dir, trans_data)
-    source_dir = os.path.join(data_dir, original_data)
-    target_dir = os.path.join(data_dir, converted_data)
-    if os.path.exists(target_dir):
-        print("skipping maybe_split_wav")
-        return
+    source_dir = os.path.join(dst_dir, original_data)
+    target_dir = os.path.join(dst_dir, converted_data)
+    os.makedirs(target_dir, exist_ok=True)
 
-    os.makedirs(target_dir)
+    target_wav_dir = os.path.join(target_dir, "wav")
+    target_txt_dir = os.path.join(target_dir, "txt")
+    os.makedirs(target_wav_dir, exist_ok=True)
+    os.makedirs(target_txt_dir, exist_ok=True)
 
     files = []
 
     # Loop over transcription files and split corresponding wav
-    for root, dirnames, filenames in os.walk(trans_dir):
-        for filename in fnmatch.filter(filenames, "*.text"):
-            if "trans" not in filename:
-                continue
-            trans_file = os.path.join(root, filename)
-            segments = _parse_transcriptions(trans_file)
+    for trans_file in glob.iglob(os.path.join(trans_dir, "**/*.text"), recursive=True):
+        if "trans" not in os.path.basename(trans_file):
+            continue
+        segments = _parse_transcriptions(trans_file)
 
-            # Open wav corresponding to transcription file
-            channel = ("2","1")[(os.path.splitext(os.path.basename(trans_file))[0])[6] == 'A']
-            wav_filename = "sw0" + (os.path.splitext(os.path.basename(trans_file))[0])[2:6] + "-" + channel + ".wav"
-            wav_file = os.path.join(source_dir, wav_filename)
+        # Open wav corresponding to transcription file
+        channel = ("2","1")[(os.path.splitext(os.path.basename(trans_file))[0])[6] == 'A']
+        wav_filename = "sw0" + (os.path.splitext(os.path.basename(trans_file))[0])[2:6] + "-" + channel + ".wav"
+        wav_file = os.path.join(source_dir, wav_filename)
 
-            print("splitting {} according to {}".format(wav_file, trans_file))
+        delimiter = (os.path.splitext(os.path.basename(trans_file))[0])[2:4]
+        target_wav_sp_dir = os.path.join(target_wav_dir, delimiter)
+        target_txt_sp_dir = os.path.join(target_txt_dir, delimiter)
+        os.makedirs(target_wav_sp_dir, exist_ok=True)
+        os.makedirs(target_txt_sp_dir, exist_ok=True)
 
-            if not os.path.exists(wav_file):
-                print("skipping. does not exist:" + wav_file)
-                continue
 
-            origAudio = wave.open(wav_file, "r")
+        print("splitting {} according to {}".format(wav_file, trans_file))
 
-            # Loop over segments and split wav_file for each segment
-            for segment in segments:
-                # Create wav segment filename
-                start_time = segment["start_time"]
-                stop_time = segment["stop_time"]
-                new_wav_filename = os.path.splitext(os.path.basename(trans_file))[0] + "-" + str(
-                    start_time) + "-" + str(stop_time) + ".wav"
-                if _is_wav_too_short(new_wav_filename):
-                  continue
-                new_wav_file = os.path.join(target_dir, new_wav_filename)
+        if not os.path.exists(wav_file):
+            print("skipping. does not exist:" + wav_file)
+            continue
 
-                _split_wav(origAudio, start_time, stop_time, new_wav_file)
+        origAudio = wave.open(wav_file, "r")
 
-                new_wav_filesize = os.path.getsize(new_wav_file)
-                transcript = segment["transcript"]
-                files.append((os.path.abspath(new_wav_file), new_wav_filesize, transcript))
+        # Loop over segments and split wav_file for each segment
+        for segment in segments:
+            # Create wav segment filename
+            start_time = segment["start_time"]
+            stop_time = segment["stop_time"]
+            base_filename = os.path.splitext(os.path.basename(trans_file))[0] + "-" + str(start_time) + "-" + str(stop_time)
+            new_wav_filename = base_filename + ".wav"
+            if _is_wav_too_short(new_wav_filename):
+              continue
+            new_wav_file = os.path.join(target_wav_sp_dir, new_wav_filename)
+            _split_wav(origAudio, start_time, stop_time, new_wav_file)
 
-            # Close origAudio
-            origAudio.close()
+            new_txt_filename = base_filename + ".txt"
+            new_txt_file = os.path.join(target_txt_sp_dir, new_txt_filename)
 
-    return pandas.DataFrame(data=files, columns=["wav_filename", "wav_filesize", "transcript"])
+            new_wav_filesize = os.path.getsize(new_wav_file)
+            transcript = validate_label(segment["transcript"])
+            if transcript != None:
+                files.append((os.path.abspath(new_wav_file),
+                              os.path.abspath(new_txt_file)))
+                with open(new_txt_file, "w") as f:
+                    f.write(transcript)
+
+        # Close origAudio
+        origAudio.close()
+
+    return pandas.DataFrame(data=files, columns=["wav_filename", "txt_filename"])
 
 def _is_wav_too_short(wav_filename):
     short_wav_filenames = ['sw2986A-ms98-a-trans-80.6385-83.358875.wav', 'sw2663A-ms98-a-trans-161.12025-164.213375.wav']
@@ -214,4 +219,4 @@ def validate_label(label):
 
 
 if __name__ == "__main__":
-    _download_and_preprocess_data(sys.argv[1])
+    _download_and_preprocess_data(sys.argv[1], sys.argv[2])

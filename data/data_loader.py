@@ -43,6 +43,7 @@ class AudioParser(object):
 class NoiseInjection(object):
     def __init__(self,
                  path=None,
+                 sample_rate=16000,
                  noise_levels=(0, 0.5)):
         """
         Adds noise to an input signal with specific SNR. Higher the noise level, the more noise added.
