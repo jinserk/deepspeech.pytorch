@@ -72,7 +72,7 @@ class NoiseInjection(object):
         noise_energy = np.sqrt(noise_dst.dot(noise_dst)/noise_dst.size)
         data_energy = np.sqrt(data.dot(data)/data.size)
         data += noise_level * noise_dst * data_energy / noise_energy
-        return data, noise_dst
+        return data
 
 
 class SpectrogramParser(AudioParser):
