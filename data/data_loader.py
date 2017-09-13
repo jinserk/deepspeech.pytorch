@@ -22,6 +22,10 @@ def load_audio(path):
             sound = sound.squeeze()
         else:
             sound = sound.mean(axis=1)  # multiple channels, average
+    minlen = int(sample_rate/2)
+    if len(sound) < minlen:
+        padding = np.zeros((minlen-len(sound),))
+        sound = np.concatenate((sound, padding))
     return sound, sample_rate
 
 

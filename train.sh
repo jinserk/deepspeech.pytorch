@@ -3,7 +3,7 @@
 store_path="models/20170912"
 
 python train.py \
-	--train_manifest data/manifests/long.csv \
+	--train_manifest data/manifests/train.csv \
 	--val data/manifests/val.csv \
 	--sample_rate 8000 \
 	--augment \
