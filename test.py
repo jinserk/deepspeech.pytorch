@@ -47,7 +47,7 @@ if __name__ == '__main__':
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.test_manifest, labels=labels,
                                       normalize=True)
     test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size,
-                                  num_workers=args.num_workers, pin_memory=True)
+                                  num_workers=args.num_workers, pin_memory=False)
     total_cer, total_wer = 0, 0
     for i, (data) in tqdm(enumerate(test_loader), total=len(test_loader)):
         inputs, targets, input_percentages, target_sizes = data
@@ -62,7 +62,7 @@ if __name__ == '__main__':
             offset += size
 
         if args.cuda:
-            inputs = inputs.cuda(async=True)
+            inputs = inputs.cuda(async=False)
 
         out = model(inputs)
         out = out.transpose(0, 1)  # TxNxH

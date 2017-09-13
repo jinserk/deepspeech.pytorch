@@ -3,15 +3,17 @@
 store_path="models/20170912"
 
 python train.py \
-	--train_manifest data/manifests/train.csv \
+	--train_manifest data/manifests/long.csv \
 	--val data/manifests/val.csv \
 	--sample_rate 8000 \
 	--augment \
 	--noise_dir data/noise \
-	--num_workers 16 \
-	--batch_size 12 \
+	--noise_min 0.0 \
+	--noise_max 0.5 \
+	--num_workers 10 \
+	--batch_size 10 \
 	--rnn_type gru \
-	--hidden_size 1200 \
+	--hidden_size 1000 \
 	--hidden_layers 5 \
 	--epochs 100 \
 	--cuda \

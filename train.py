@@ -50,7 +50,7 @@ parser.add_argument('--noise_dir', default=None,
 parser.add_argument('--noise_prob', default=0.4, help='Probability of noise being added per sample')
 parser.add_argument('--noise_min', default=0.0,
                     help='Minimum noise level to sample from. (1.0 means all noise, not original signal)', type=float)
-parser.add_argument('--noise_max', default=0.1,
+parser.add_argument('--noise_max', default=0.5,
                     help='Maximum noise levels to sample from. Maximum 1.0', type=float)
 parser.add_argument('--tensorboard', dest='tensorboard', action='store_true', help='Turn on tensorboard graphing')
 parser.add_argument('--log_dir', default='visualize/deepspeech_final', help='Location of tensorboard log')
@@ -150,9 +150,9 @@ def main():
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
                                       normalize=True, augment=False)
     train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size,
-                                   num_workers=args.num_workers, pin_memory=True)
+                                   num_workers=args.num_workers, pin_memory=False)
     test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size,
-                                  num_workers=args.num_workers, pin_memory=True)
+                                  num_workers=args.num_workers, pin_memory=False)
 
     rnn_type = args.rnn_type.lower()
     assert rnn_type in supported_rnns, "rnn_type should be either lstm, rnn or gru"
@@ -237,7 +237,7 @@ def main():
             targets = Variable(targets, requires_grad=False)
 
             if args.cuda:
-                inputs = inputs.cuda(async=True)
+                inputs = inputs.cuda(async=False)
 
             out = model(inputs)
             out = out.transpose(0, 1)  # TxNxH
@@ -310,7 +310,7 @@ def main():
                 offset += size
 
             if args.cuda:
-                inputs = inputs.cuda(async=True)
+                inputs = inputs.cuda(async=False)
 
             out = model(inputs)
             out = out.transpose(0, 1)  # TxNxH
