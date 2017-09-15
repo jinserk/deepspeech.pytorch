@@ -27,9 +27,9 @@ for file in os.listdir(args.merge_dir):
 prune_min = args.min_duration >= 0
 prune_max = args.max_duration >= 0
 if prune_min:
-    print("Pruning files with minimum duration %f" % (args.min_duration))
+    print("Pruning files with minimum duration of %.3f secs" % (args.min_duration))
 if prune_max:
-    print("Pruning files with  maximum duration of %f" % (args.max_duration))
+    print("Pruning files with maximum duration of %.3f secs" % (args.max_duration))
 
 new_files = []
 size = len(files)

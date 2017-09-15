@@ -7,6 +7,7 @@ import logging
 
 import torch
 from torch.autograd import Variable
+from torch.utils.data.sampler import BatchSampler
 from warpctc_pytorch import CTCLoss
 
 from data.bucketing_sampler import BucketingSampler, SpectrogramDatasetWithLength
@@ -193,7 +194,7 @@ def main():
                     opts=opts[x],
                 )
         if args.tensorboard and \
-                        package['loss_results'] is not None and start_epoch > 0:  # Previous scores to tensorboard logs
+           package['loss_results'] is not None and start_epoch > 0:  # Previous scores to tensorboard logs
             for i in range(start_epoch):
                 info = {
                     'Avg Train Loss': loss_results[i],
@@ -202,13 +203,22 @@ def main():
                 }
                 for tag, val in info.items():
                     logger.scalar_summary(tag, val, i + 1)
-        if not args.no_bucketing:# and epochs != 0:
+        if not args.no_bucketing and start_epoch != 0:
             log.info("Using bucketing sampler for the following epochs")
-            train_dataset = SpectrogramDatasetWithLength(audio_conf=audio_conf, manifest_filepath=args.train_manifest,
-                                                         labels=labels,
-                                                         normalize=True, augment=args.augment)
+            train_dataset = SpectrogramDatasetWithLength(audio_conf=audio_conf,
+                                                         manifest_filepath=args.train_manifest,
+                                                         labels=labels, normalize=True,
+                                                         augment=args.augment, start=start_iter)
             sampler = BucketingSampler(train_dataset)
             train_loader.sampler = sampler
+            batch_sampler = BatchSampler(sampler, train_loader.batch_size, train_loader.drop_last)
+            train_loader.batch_sampler = batch_sampler
+        else:
+            train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest,
+                                               labels=labels, normalize=True, augment=args.augment,
+                                               start=start_iter)
+            train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size,
+                                           num_workers=args.num_workers, pin_memory=False)
     else:
         avg_loss = 0
         start_epoch = 0
@@ -227,8 +237,6 @@ def main():
         model.train()
         end = time.time()
         for i, (data) in enumerate(train_loader, start=start_iter):
-            if i == len(train_loader):
-                break
             inputs, targets, input_percentages, target_sizes = data
             # measure data loading time
             data_time.update(time.time() - end)
@@ -281,7 +289,7 @@ def main():
                     (epoch + 1), (i + 1), len(train_loader), batch_time=batch_time,
                     data_time=data_time, loss=losses))
             if args.checkpoint_per_batch > 0 and i > 0 and (i + 1) % args.checkpoint_per_batch == 0:
-                file_path = '%s/deepspeech_checkpoint_epoch_%d_iter_%d.pth.tar' % (save_folder, epoch + 1, i + 1)
+                file_path = '%s/deepspeech_checkpoint_epoch_%03d_iter_%06d.pth.tar' % (save_folder, epoch + 1, i + 1)
                 log.info("Saving checkpoint model to %s" % file_path)
                 torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, iteration=i,
                                                 loss_results=loss_results,
@@ -289,12 +297,12 @@ def main():
                            file_path)
             del loss
             del out
+
         avg_loss /= len(train_loader)
 
         log.info('Training Summary Epoch {0:03d}:  '
                  'Average Loss {loss:8.4f}'.format((epoch + 1), loss=avg_loss))
 
-        start_iter = 0  # Reset start iteration for next epoch
         total_cer, total_wer = 0, 0
         model.eval()
         for i, (data) in enumerate(test_loader):  # test
@@ -372,7 +380,7 @@ def main():
                     logger.histo_summary(tag, to_np(value), epoch + 1)
                     logger.histo_summary(tag + '/grad', to_np(value.grad), epoch + 1)
         if args.checkpoint:
-            file_path = '%s/deepspeech_%d.pth.tar' % (save_folder, epoch + 1)
+            file_path = '%s/deepspeech_%03d.pth.tar' % (save_folder, epoch + 1)
             torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
                                             wer_results=wer_results, cer_results=cer_results),
                        file_path)
@@ -390,13 +398,24 @@ def main():
             best_wer = wer
 
         avg_loss = 0
+
+        # Reset start iteration for next epoch, and change to full range of train_data
+        start_iter = 0
         if not args.no_bucketing and epoch == 0:
             log.info("Switching to bucketing sampler for following epochs")
-            train_dataset = SpectrogramDatasetWithLength(audio_conf=audio_conf, manifest_filepath=args.train_manifest,
-                                                         labels=labels,
-                                                         normalize=True, augment=args.augment)
+            train_dataset = SpectrogramDatasetWithLength(audio_conf=audio_conf,
+                                                         manifest_filepath=args.train_manifest,
+                                                         labels=labels, normalize=True, augment=args.augment)
             sampler = BucketingSampler(train_dataset)
             train_loader.sampler = sampler
+            batch_sampler = BatchSampler(sampler, train_loader.batch_size, train_loader.drop_last)
+            train_loader.batch_sampler = batch_sampler
+        elif args.continue_from:
+            train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest,
+                                               labels=labels, normalize=True, augment=args.augment)
+            train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size,
+                                           num_workers=args.num_workers, pin_memory=False)
+            args.continue_from = False
 
 
 if __name__ == '__main__':

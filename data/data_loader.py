@@ -71,12 +71,13 @@ class NoiseInjection(object):
         data_len = len(data) / self.sample_rate
         noise_start = np.random.rand() * (noise_len - data_len)
         noise_end = noise_start + data_len
-        noise_dst = audio_with_sox(noise_path, self.sample_rate, noise_start, noise_end)
-        assert len(data) == len(noise_dst)
-        noise_energy = np.sqrt(noise_dst.dot(noise_dst)/noise_dst.size)
+        noise = audio_with_sox(noise_path, self.sample_rate, noise_start, noise_end)
+        assert len(data) == len(noise)
+        noise_energy = np.sqrt(noise.dot(noise)/noise.size)
         data_energy = np.sqrt(data.dot(data)/data.size)
-        data += noise_level * noise_dst * data_energy / noise_energy
-        return data
+        noise *= noise_level * data_energy / noise_energy
+        data += noise
+        return data, noise
 
 
 class SpectrogramParser(AudioParser):
@@ -95,8 +96,7 @@ class SpectrogramParser(AudioParser):
         self.normalize = normalize
         self.augment = augment
         self.noiseInjector = NoiseInjection(audio_conf['noise_dir'], self.sample_rate,
-                                            audio_conf['noise_levels']) if audio_conf.get(
-            'noise_dir') is not None else None
+                                            audio_conf['noise_levels']) if audio_conf.get('noise_dir') is not None else None
         self.noise_prob = audio_conf.get('noise_prob')
 
     def parse_audio(self, audio_path):
@@ -107,7 +107,7 @@ class SpectrogramParser(AudioParser):
         if self.noiseInjector:
             add_noise = np.random.binomial(1, self.noise_prob)
             if add_noise:
-                y = self.noiseInjector.inject_noise(y)
+                y, _ = self.noiseInjector.inject_noise(y)
         n_fft = int(self.sample_rate * self.window_size)
         win_length = n_fft
         hop_length = int(self.sample_rate * self.window_stride)
@@ -131,7 +131,7 @@ class SpectrogramParser(AudioParser):
 
 
 class SpectrogramDataset(Dataset, SpectrogramParser):
-    def __init__(self, audio_conf, manifest_filepath, labels, normalize=False, augment=False):
+    def __init__(self, audio_conf, manifest_filepath, labels, normalize=False, augment=False, start=0):
         """
         Dataset that loads tensors via a csv containing file paths to audio files and transcripts separated by
         a comma. Each new line is a different sample. Example below:
@@ -148,7 +148,7 @@ class SpectrogramDataset(Dataset, SpectrogramParser):
         with open(manifest_filepath) as f:
             ids = f.readlines()
         ids = [x.strip().split(',') for x in ids]
-        self.ids = ids
+        self.ids = ids[start:]
         self.size = len(ids)
         self.labels_map = dict([(labels[i], i) for i in range(len(labels))])
         super(SpectrogramDataset, self).__init__(audio_conf, normalize, augment)
@@ -215,9 +215,8 @@ def audio_with_sox(path, sample_rate, start_time, end_time):
     """
     with NamedTemporaryFile(suffix=".wav") as tar_file:
         tar_filename = tar_file.name
-        sox_params = "sox \"{}\" -r {} -c 1 -b 16 -e si {} trim {} ={} >/dev/null 2>&1".format(path, sample_rate,
-                                                                                         tar_filename, start_time,
-                                                                                         end_time)
+        sox_params = "sox \"{}\" -t wav -r {} -c 1 {} trim {} ={} >/dev/null 2>&1".format(
+                     path, sample_rate, tar_filename, start_time, end_time)
         os.system(sox_params)
         y, _ = load_audio(tar_filename)
         return y
@@ -229,10 +228,8 @@ def augment_audio_with_sox(path, sample_rate, tempo, gain):
     """
     with NamedTemporaryFile(suffix=".wav") as augmented_file:
         augmented_filename = augmented_file.name
-        sox_augment_params = ["tempo", "{:.3f}".format(tempo), "gain", "{:.3f}".format(gain)]
-        sox_params = "sox \"{}\" -r {} -c 1 -b 16 -e si {} {} >/dev/null 2>&1".format(path, sample_rate,
-                                                                                      augmented_filename,
-                                                                                      " ".join(sox_augment_params))
+        sox_params = "sox \"{}\" -t wav -r {} -c 1 {} tempo {:.3f} gain {:.3f} >/dev/null 2>&1".format(
+                      path, sample_rate, augmented_filename, tempo, gain)
         os.system(sox_params)
         y, _ = load_audio(augmented_filename)
         return y

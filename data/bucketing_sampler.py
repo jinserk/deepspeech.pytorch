@@ -1,6 +1,6 @@
 from torch.utils.data.sampler import Sampler
 import numpy as np
-from data.data_loader import SpectrogramDataset, load_audio
+from data.data_loader import SpectrogramDataset, load_audio, get_audio_length
 from collections import defaultdict
 
 
@@ -13,7 +13,7 @@ class SpectrogramDatasetWithLength(SpectrogramDataset):
         """
         super(SpectrogramDatasetWithLength, self).__init__(*args, **kwargs)
         audio_paths = [path for (path, _) in self.ids]
-        audio_lengths = [len(load_audio(path)[0]) for path in audio_paths]
+        audio_lengths = [get_audio_length(path) for path in audio_paths]
         hist, bin_edges = np.histogram(audio_lengths, bins="auto")
         audio_samples_indices = np.digitize(audio_lengths, bins=bin_edges)
         self.bins_to_samples = defaultdict(list)
