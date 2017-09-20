@@ -174,7 +174,7 @@ def main():
         model.load_state_dict(package['state_dict'])
         optimizer.load_state_dict(package['optim_dict'])
         start_epoch = int(package.get('epoch', 1)) - 1  # Python index start at 0 for training
-        start_iter = package.get('iteration', None)
+        start_iter = None #package.get('iteration', None)
         if start_iter is None:
             start_epoch += 1  # Assume that we saved a model after an epoch finished, so start at the next epoch.
             start_iter = 0
@@ -207,18 +207,11 @@ def main():
             log.info("Using bucketing sampler for the following epochs")
             train_dataset = SpectrogramDatasetWithLength(audio_conf=audio_conf,
                                                          manifest_filepath=args.train_manifest,
-                                                         labels=labels, normalize=True,
-                                                         augment=args.augment, start=start_iter)
+                                                         labels=labels, normalize=True, augment=args.augment)
             sampler = BucketingSampler(train_dataset)
             train_loader.sampler = sampler
             batch_sampler = BatchSampler(sampler, train_loader.batch_size, train_loader.drop_last)
             train_loader.batch_sampler = batch_sampler
-        else:
-            train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest,
-                                               labels=labels, normalize=True, augment=args.augment,
-                                               start=start_iter)
-            train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size,
-                                           num_workers=args.num_workers, pin_memory=False)
     else:
         avg_loss = 0
         start_epoch = 0
@@ -236,7 +229,7 @@ def main():
     for epoch in range(start_epoch, args.epochs):
         model.train()
         end = time.time()
-        for i, (data) in enumerate(train_loader, start=start_iter):
+        for i, (data) in enumerate(train_loader):
             inputs, targets, input_percentages, target_sizes = data
             # measure data loading time
             data_time.update(time.time() - end)
@@ -303,6 +296,7 @@ def main():
         log.info('Training Summary Epoch {0:03d}:  '
                  'Average Loss {loss:8.4f}'.format((epoch + 1), loss=avg_loss))
 
+        start_iter = 0 # Reset start iteration for next epoch, and change to full range of train_data
         total_cer, total_wer = 0, 0
         model.eval()
         for i, (data) in enumerate(test_loader):  # test
@@ -399,8 +393,6 @@ def main():
 
         avg_loss = 0
 
-        # Reset start iteration for next epoch, and change to full range of train_data
-        start_iter = 0
         if not args.no_bucketing and epoch == 0:
             log.info("Switching to bucketing sampler for following epochs")
             train_dataset = SpectrogramDatasetWithLength(audio_conf=audio_conf,
@@ -410,13 +402,11 @@ def main():
             train_loader.sampler = sampler
             batch_sampler = BatchSampler(sampler, train_loader.batch_size, train_loader.drop_last)
             train_loader.batch_sampler = batch_sampler
-        elif args.continue_from:
-            train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest,
-                                               labels=labels, normalize=True, augment=args.augment)
-            train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size,
-                                           num_workers=args.num_workers, pin_memory=False)
-            args.continue_from = False
 
 
 if __name__ == '__main__':
-    main()
+    os.setpgrp()
+    try:
+        main()
+    finally:
+        os.killpg(0, signal.SIGKILL)

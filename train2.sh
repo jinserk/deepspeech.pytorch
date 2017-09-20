@@ -1,23 +1,28 @@
 #!/bin/bash
 
-store_path="models/20170911"
+store_path="models/20170919"
+log_file="train.log"
 
+nohup \
 python train.py \
-	--train_manifest data/swb/swb-train.csv \
-	--val data/swb/swb-dev.csv \
+	--train_manifest data/ted/ted_train_manifest.csv \
+	--val data/ted/ted_val_manifest.csv \
 	--sample_rate 8000 \
-	--noise_dir data/noise \
-	--noise_max 0.1 \
 	--augment \
-	--num_workers 4 \
-	--batch_size 16 \
+	--noise_dir data/noise \
+	--noise_min 0.0 \
+	--noise_max 0.2 \
+	--num_workers 16 \
+	--batch_size 4 \
 	--rnn_type gru \
-	--hidden_size 400 \
+	--hidden_size 1000 \
 	--hidden_layers 5 \
-	--epochs 3 \
+	--epochs 100 \
+	--cuda \
 	--visdom \
 	--checkpoint \
+	--checkpoint_per_batch 10000 \
 	--save_folder $store_path \
 	--model_path $store_path/deepspeech.final.pth.tar \
-	#--continue_from $store_path/deepspeech_12.pth.tar \
+>$log_file &
 

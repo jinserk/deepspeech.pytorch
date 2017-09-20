@@ -37,7 +37,7 @@ if __name__ == '__main__':
 
     if args.decoder == "beam":
         from decoder import BeamCTCDecoder
-        decoder = BeamCTCDecoder(labels.lower(), beam_width=args.beam_width, top_paths=1, space_index=labels.index(' '),
+        decoder = BeamCTCDecoder(labels, beam_width=args.beam_width, top_paths=1, space_index=labels.index(' '),
                                  blank_index=labels.index('_'), lm_path=args.lm_path,
                                  trie_path=args.trie_path, lm_alpha=args.lm_alpha, lm_beta1=args.lm_beta1,
                                  lm_beta2=args.lm_beta2)

@@ -1,10 +1,10 @@
 #!/bin/bash
 
-model="models/20170829/deepspeech_12.pth.tar"
+model="models/20170918/deepspeech_checkpoint_epoch_003_iter_140000.pth.tar"
 decoder="beam"
 cuda="no"
-lm_path="lm/mozilla/lm.binary"
-trie_path="lm/mozilla/lm.trie"
+lm_path="lm/cantab/lm.binary"
+trie_path="lm/cantab/lm.trie"
 
 . parse_options.sh
 

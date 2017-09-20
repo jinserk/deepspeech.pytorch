@@ -131,7 +131,7 @@ class SpectrogramParser(AudioParser):
 
 
 class SpectrogramDataset(Dataset, SpectrogramParser):
-    def __init__(self, audio_conf, manifest_filepath, labels, normalize=False, augment=False, start=0):
+    def __init__(self, audio_conf, manifest_filepath, labels, normalize=False, augment=False):
         """
         Dataset that loads tensors via a csv containing file paths to audio files and transcripts separated by
         a comma. Each new line is a different sample. Example below:
@@ -148,14 +148,14 @@ class SpectrogramDataset(Dataset, SpectrogramParser):
         with open(manifest_filepath) as f:
             ids = f.readlines()
         ids = [x.strip().split(',') for x in ids]
-        self.ids = ids[start:]
+        self.ids = ids
         self.size = len(ids)
         self.labels_map = dict([(labels[i], i) for i in range(len(labels))])
         super(SpectrogramDataset, self).__init__(audio_conf, normalize, augment)
 
     def __getitem__(self, index):
         sample = self.ids[index]
-        audio_path, transcript_path = sample[0], sample[1]
+        audio_path, transcript_path = sample[0], sample[2]
         spect = self.parse_audio(audio_path)
         transcript = self.parse_transcript(transcript_path)
         return spect, transcript
@@ -204,9 +204,18 @@ class AudioDataLoader(DataLoader):
         self.collate_fn = _collate_fn
 
 
-def get_audio_length(path):
-    output = subprocess.check_output(['soxi -D \"%s\"' % path.strip()], shell=True)
-    return float(output)
+def get_audio_length(path, samp=False):
+    if samp:
+        flag = '-s' # return number of samples
+    else:
+        flag = '-D' # return length of time in secs
+
+    output = subprocess.check_output(['soxi {} \"{}\"'.format(flag, path.strip())], shell=True)
+
+    if samp:
+        return int(output)
+    else:
+        return float(output)
 
 
 def audio_with_sox(path, sample_rate, start_time, end_time):

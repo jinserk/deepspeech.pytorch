@@ -5,6 +5,8 @@ import io
 import os
 import glob
 
+from data_loader import get_audio_length
+
 import subprocess
 
 
@@ -34,8 +36,9 @@ def create_manifest(data_path, out_path, tag, ordered=True):
     counter = 0
     with io.FileIO(manifest_path, "w") as file:
         for wav_path in file_paths:
+            duration = get_audio_length(wav_path)
             transcript_path = wav_path.replace('/wav/', '/txt/').replace('.wav', '.txt')
-            sample = os.path.abspath(wav_path) + ',' + os.path.abspath(transcript_path) + '\n'
+            sample = os.path.abspath(wav_path) + ',' + '{}'.format(duration) + ',' + os.path.abspath(transcript_path) + '\n'
             file.write(sample.encode('utf-8'))
             counter += 1
             update_progress(counter / float(size))

@@ -16,6 +16,8 @@ import unicodedata
 import wave
 import codecs
 
+from data_loader import get_audio_length
+
 sph2pipe_bin = "/d1/jbaik/kaldi/tools/sph2pipe_v2.5/sph2pipe"
 
 def _download_and_preprocess_data(data_dir, dst_dir):
@@ -93,11 +95,6 @@ def _maybe_split_wav_and_sentences(data_dir, trans_data, dst_dir, original_data,
     target_dir = os.path.join(dst_dir, converted_data)
     os.makedirs(target_dir, exist_ok=True)
 
-    target_wav_dir = os.path.join(target_dir, "wav")
-    target_txt_dir = os.path.join(target_dir, "txt")
-    os.makedirs(target_wav_dir, exist_ok=True)
-    os.makedirs(target_txt_dir, exist_ok=True)
-
     files = []
 
     # Loop over transcription files and split corresponding wav
@@ -112,11 +109,13 @@ def _maybe_split_wav_and_sentences(data_dir, trans_data, dst_dir, original_data,
         wav_file = os.path.join(source_dir, wav_filename)
 
         delimiter = (os.path.splitext(os.path.basename(trans_file))[0])[2:4]
-        target_wav_sp_dir = os.path.join(target_wav_dir, delimiter)
-        target_txt_sp_dir = os.path.join(target_txt_dir, delimiter)
-        os.makedirs(target_wav_sp_dir, exist_ok=True)
-        os.makedirs(target_txt_sp_dir, exist_ok=True)
+        target_sp_dir = os.path.join(target_dir, delimiter)
+        os.makedirs(target_sp_dir, exist_ok=True)
 
+        target_wav_dir = os.path.join(target_sp_dir, "wav")
+        target_txt_dir = os.path.join(target_sp_dir, "txt")
+        os.makedirs(target_wav_dir, exist_ok=True)
+        os.makedirs(target_txt_dir, exist_ok=True)
 
         print("splitting {} according to {}".format(wav_file, trans_file))
 
@@ -135,16 +134,17 @@ def _maybe_split_wav_and_sentences(data_dir, trans_data, dst_dir, original_data,
             new_wav_filename = base_filename + ".wav"
             if _is_wav_too_short(new_wav_filename):
               continue
-            new_wav_file = os.path.join(target_wav_sp_dir, new_wav_filename)
+            new_wav_file = os.path.join(target_wav_dir, new_wav_filename)
             _split_wav(origAudio, start_time, stop_time, new_wav_file)
+            duration = get_audio_length(new_wav_file)
 
             new_txt_filename = base_filename + ".txt"
-            new_txt_file = os.path.join(target_txt_sp_dir, new_txt_filename)
+            new_txt_file = os.path.join(target_txt_dir, new_txt_filename)
 
             new_wav_filesize = os.path.getsize(new_wav_file)
             transcript = validate_label(segment["transcript"])
             if transcript != None:
-                files.append((os.path.abspath(new_wav_file),
+                files.append((os.path.abspath(new_wav_file), duration,
                               os.path.abspath(new_txt_file)))
                 with open(new_txt_file, "w") as f:
                     f.write(transcript)
@@ -152,7 +152,7 @@ def _maybe_split_wav_and_sentences(data_dir, trans_data, dst_dir, original_data,
         # Close origAudio
         origAudio.close()
 
-    return pandas.DataFrame(data=files, columns=["wav_filename", "txt_filename"])
+    return pandas.DataFrame(data=files, columns=["wav_filename", "duration", "txt_filename"])
 
 def _is_wav_too_short(wav_filename):
     short_wav_filenames = ['sw2986A-ms98-a-trans-80.6385-83.358875.wav', 'sw2663A-ms98-a-trans-161.12025-164.213375.wav']
@@ -215,8 +215,9 @@ def validate_label(label):
     label = label.replace("?", "")
     label = label.strip()
 
-    return label.upper()
+    return label.lower()
 
 
 if __name__ == "__main__":
-    _download_and_preprocess_data(sys.argv[1], sys.argv[2])
+    #_download_and_preprocess_data(sys.argv[1], sys.argv[2])
+    _download_and_preprocess_data("/u1/corpus/LDC", "swb")

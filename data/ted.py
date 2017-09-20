@@ -7,10 +7,12 @@ import unicodedata
 import io
 from utils import create_manifest, update_progress
 
+from data_loader import get_audio_length
+
 parser = argparse.ArgumentParser(description='Processes and downloads TED-LIUMv2 dataset.')
-parser.add_argument("--target_dir", default='TEDLIUM_dataset/', type=str, help="Directory to store the dataset.")
-parser.add_argument("--tar_path", type=str, help="Path to the TEDLIUM_release tar if downloaded (Optional).")
-parser.add_argument('--sample_rate', default=16000, type=int, help='Sample rate')
+parser.add_argument("--target_dir", default='ted', type=str, help="Directory to store the dataset.")
+parser.add_argument("--tar_path", default='ted', type=str, help="Path to the TEDLIUM_release tar if downloaded (Optional).")
+parser.add_argument('--sample_rate', default=8000, type=int, help='Sample rate')
 args = parser.parse_args()
 
 TED_LIUM_V2_DL_URL = "http://www.openslr.org/resources/19/TEDLIUM_release2.tar.gz"
@@ -40,14 +42,14 @@ def get_utterances_from_stm(stm_file):
         return res
 
 
-def cut_utterance(src_sph_file, target_wav_file, start_time, end_time, sample_rate=16000):
+def cut_utterance(src_sph_file, target_wav_file, start_time, end_time, sample_rate=args.sample_rate):
     subprocess.call(["sox -V1 --norm {} -r {} -b 16 -c 1 {} trim {} ={}".format(src_sph_file, str(sample_rate),
                                                                       target_wav_file, start_time, end_time)],
                     shell=True)
 
 
 def _preprocess_transcript(phrase):
-    return phrase.strip().upper()
+    return phrase.strip().lower()
 
 
 def filter_short_utterances(utterance_info, min_len_sec=1.0):

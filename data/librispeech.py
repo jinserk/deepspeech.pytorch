@@ -6,7 +6,7 @@ from utils import create_manifest, update_progress
 import shutil
 
 parser = argparse.ArgumentParser(description='Processes and downloads LibriSpeech dataset.')
-parser.add_argument("--target_dir", default='librispeech/', type=str, help="Directory to store the dataset.")
+parser.add_argument("--target_dir", default='librispeech', type=str, help="Directory to store the dataset.")
 parser.add_argument('--sample_rate', default=8000, type=int, help='Sample rate')
 parser.add_argument('--files_to_use', default="train-clean-100.tar.gz,"
                                               "train-clean-360.tar.gz,train-other-500.tar.gz,"
@@ -34,7 +34,7 @@ LIBRISPEECH_DIRS = {
 
 
 def _preprocess_transcript(phrase):
-    return phrase.strip().upper()
+    return phrase.strip().lower()
 
 
 def _process_file(wav_dir, txt_dir, filename):
