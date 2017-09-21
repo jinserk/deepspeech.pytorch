@@ -1,7 +1,9 @@
 #!/bin/bash
 
-store_path="models/20170919"
+store_path="models/20170921"
 log_file="train.log"
+
+trap 'kill -TERM $PID' TERM INT
 
 nohup \
 python train.py \
@@ -24,5 +26,12 @@ python train.py \
 	--checkpoint_per_batch 10000 \
 	--save_folder $store_path \
 	--model_path $store_path/deepspeech.final.pth.tar \
+	--continue_from models/20170919/deepspeech_checkpoint_epoch_001_iter_390000.pth.tar \
 >$log_file &
+
+PID=$!
+wait $PID
+trap - TERM INT
+wait $PID
+EXIT_STATUS=$?
 

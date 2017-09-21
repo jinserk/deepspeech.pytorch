@@ -14,7 +14,7 @@ class SpectrogramDatasetWithLength(SpectrogramDataset):
         super(SpectrogramDatasetWithLength, self).__init__(*args, **kwargs)
         #audio_paths = [sample[0] for sample in self.ids]
         #audio_lengths = [get_audio_length(path) for path in audio_paths]
-        audio_lengths = [sample[1] for sample in self.ids]
+        audio_lengths = [float(sample[1]) for sample in self.ids]
         hist, bin_edges = np.histogram(audio_lengths, bins="auto")
         audio_samples_indices = np.digitize(audio_lengths, bins=bin_edges)
         self.bins_to_samples = defaultdict(list)

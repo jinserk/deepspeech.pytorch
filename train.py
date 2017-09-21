@@ -4,6 +4,7 @@ import json
 import os
 import time
 import logging
+import signal
 
 import torch
 from torch.autograd import Variable
@@ -408,5 +409,8 @@ if __name__ == '__main__':
     os.setpgrp()
     try:
         main()
+    except:
+        print(sys.exc_info()[0])
+        raise
     finally:
         os.killpg(0, signal.SIGKILL)

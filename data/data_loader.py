@@ -71,7 +71,6 @@ class NoiseInjection(object):
         data_len = len(data) / self.sample_rate
         noise_start = np.random.rand() * (noise_len - data_len)
         noise_end = noise_start + data_len
-<<<<<<< HEAD
         noise = audio_with_sox(noise_path, self.sample_rate, noise_start, noise_end)
         assert len(data) == len(noise)
         noise_energy = np.sqrt(noise.dot(noise)/noise.size)
@@ -79,15 +78,6 @@ class NoiseInjection(object):
         noise *= noise_level * data_energy / noise_energy
         data += noise
         return data, noise
-=======
-        noise_dst = audio_with_sox(noise_path, self.sample_rate, noise_start, noise_end)
-        assert len(data) == len(noise_dst)
-        noise_energy = np.sqrt(noise_dst.dot(noise_dst)/noise_dst.size)
-        data_energy = np.sqrt(data.dot(data)/data.size)
-        data += noise_level * noise_dst * data_energy / noise_energy
-        return data
->>>>>>> upstream/master
-
 
 class SpectrogramParser(AudioParser):
     def __init__(self, audio_conf, normalize=False, augment=False):
