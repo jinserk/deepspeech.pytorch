@@ -1,6 +1,6 @@
 #!/bin/bash
 
-model="models/20170918/deepspeech_checkpoint_epoch_003_iter_140000.pth.tar"
+model="models/20170919/deepspeech_checkpoint_epoch_001_iter_380000.pth.tar"
 decoder="beam"
 cuda="no"
 lm_path="lm/cantab/lm.binary"
