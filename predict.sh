@@ -1,8 +1,9 @@
 #!/bin/bash
 
-model="models/20170919/deepspeech_checkpoint_epoch_001_iter_380000.pth.tar"
-decoder="beam"
-cuda="no"
+model="models/20170929_train0/deepspeech_checkpoint_epoch_009_iter_010000.pth.tar"
+#model="models/20170929_train0/deepspeech_003.pth.tar"
+decoder="greedy"
+cuda="yes"
 lm_path="lm/cantab/lm.binary"
 trie_path="lm/cantab/lm.trie"
 

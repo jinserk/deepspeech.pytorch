@@ -21,7 +21,7 @@ parser.add_argument('--train_manifest', metavar='DIR',
                     help='path to train manifest csv', default='data/train_manifest.csv')
 parser.add_argument('--val_manifest', metavar='DIR',
                     help='path to validation manifest csv', default='data/val_manifest.csv')
-parser.add_argument('--sample_rate', default=16000, type=int, help='Sample rate')
+parser.add_argument('--sample_rate', default=8000, type=int, help='Sample rate')
 parser.add_argument('--batch_size', default=20, type=int, help='Batch size for training')
 parser.add_argument('--num_workers', default=4, type=int, help='Number of workers used in data-loading')
 parser.add_argument('--labels_path', default='labels.json', help='Contains all characters for transcription')
@@ -30,13 +30,18 @@ parser.add_argument('--window_stride', default=.01, type=float, help='Window str
 parser.add_argument('--window', default='hamming', help='Window type for spectrogram generation')
 parser.add_argument('--hidden_size', default=800, type=int, help='Hidden size of RNNs')
 parser.add_argument('--hidden_layers', default=5, type=int, help='Number of RNN layers')
-parser.add_argument('--rnn_type', default='gru', help='Type of the RNN. rnn|gru|lstm are supported')
-parser.add_argument('--epochs', default=70, type=int, help='Number of training epochs')
+parser.add_argument('--rnn_type', default='lstm', help='Type of the RNN. rnn|gru|lstm are supported')
+parser.add_argument('--epochs', default=50, type=int, help='Number of training epochs')
 parser.add_argument('--cuda', dest='cuda', action='store_true', help='Use cuda to train model')
 parser.add_argument('--lr', '--learning-rate', default=3e-4, type=float, help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
+#parser.add_argument('--lr', '--learning-rate', default=0.001, type=float, help='initial learning rate')
+#parser.add_argument('--beta1', default=0.9, type=float, help='Adam optimizer beta1')
+#parser.add_argument('--beta2', default=0.999, type=float, help='Adam optimizer beta2')
+#parser.add_argument('--epsilon', default=1e-8, type=float, help='Adam optimizer epsilon')
 parser.add_argument('--max_norm', default=400, type=int, help='Norm cutoff to prevent explosion of gradients')
 parser.add_argument('--learning_anneal', default=1.1, type=float, help='Annealing applied to learning rate every epoch')
+#parser.add_argument('--learning_anneal', default=1, type=float, help='Annealing applied to learning rate every epoch')
 parser.add_argument('--silent', dest='silent', action='store_true', help='Turn off progress tracking per iteration')
 parser.add_argument('--checkpoint', dest='checkpoint', action='store_true', help='Enables checkpoint saving of model')
 parser.add_argument('--checkpoint_per_batch', default=0, type=int, help='Save checkpoint per batch. 0 means never save')
@@ -152,9 +157,9 @@ def main():
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
                                       normalize=True, augment=False)
     train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size,
-                                   num_workers=args.num_workers, pin_memory=False)
+                                   num_workers=args.num_workers, pin_memory=True)
     test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size,
-                                  num_workers=args.num_workers, pin_memory=False)
+                                  num_workers=args.num_workers, pin_memory=True)
 
     rnn_type = args.rnn_type.lower()
     assert rnn_type in supported_rnns, "rnn_type should be either lstm, rnn or gru"
@@ -165,8 +170,9 @@ def main():
                        audio_conf=audio_conf,
                        bidirectional=True)
     parameters = model.parameters()
-    optimizer = torch.optim.SGD(parameters, lr=args.lr,
-                                momentum=args.momentum, nesterov=True)
+    optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
+    #optimizer = torch.optim.Rprop(parameters, lr=args.lr)
+    #optimizer = torch.optim.Adam(parameters, lr=args.lr, betas=(args.beta1, args.beta2), eps=args.epsilon, weight_decay=0)
     decoder = GreedyDecoder(labels)
 
     if args.continue_from:
@@ -239,7 +245,7 @@ def main():
             targets = Variable(targets, requires_grad=False)
 
             if args.cuda:
-                inputs = inputs.cuda(async=False)
+                inputs = inputs.cuda(async=True)
 
             out = model(inputs)
             out = out.transpose(0, 1)  # TxNxH
@@ -313,7 +319,7 @@ def main():
                 offset += size
 
             if args.cuda:
-                inputs = inputs.cuda(async=False)
+                inputs = inputs.cuda(async=True)
 
             out = model(inputs)
             out = out.transpose(0, 1)  # TxNxH
@@ -406,11 +412,5 @@ def main():
 
 
 if __name__ == '__main__':
-    os.setpgrp()
-    try:
-        main()
-    except:
-        print(sys.exc_info()[0])
-        raise
-    finally:
-        os.killpg(0, signal.SIGKILL)
+    main()
+
