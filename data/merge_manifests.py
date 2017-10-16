@@ -36,6 +36,7 @@ if prune_max:
 new_files = []
 size = len(files)
 acc_size = 0.
+for x in trange(size):
     file_path = files[x].strip()
     file_path = file_path.split(',')
     #output = subprocess.check_output(
