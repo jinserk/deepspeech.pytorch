@@ -1,7 +1,6 @@
 #!/bin/bash
 
-model="models/20170929_train0/deepspeech_checkpoint_epoch_009_iter_010000.pth.tar"
-#model="models/20170929_train0/deepspeech_003.pth.tar"
+model="models/20171013_train1/deepspeech_011.pth.tar"
 decoder="greedy"
 cuda="yes"
 lm_path="lm/cantab/lm.binary"
@@ -19,7 +18,7 @@ if [ "$decoder" == "beam" ]; then
 		--beam_width 20 \
 		--lm_path $lm_path \
 		--trie_path $trie_path \
-		--lm_alpha 1.2 \
+		--lm_alpha 0.8 \
 		--lm_beta1 1.0 \
 		--lm_beta2 1.0 \
 		$cuda_opt \

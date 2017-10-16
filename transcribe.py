@@ -57,5 +57,7 @@ if __name__ == '__main__':
 
     print(decoded_output[0])
     #print(corrected_output)
-    print("Decoded {0:.2f} seconds of audio in {1:.2f} seconds".format(spect.size(3) * audio_conf['window_stride'],
-                                                                       t1 - t0), file=sys.stderr)
+
+    length = spect.size(3) * audio_conf['window_stride']
+    elapse = t1 - t0
+    print("Decoded {0:.2f} seconds of audio in {1:.2f} seconds".format(length, elapse), file=sys.stderr)

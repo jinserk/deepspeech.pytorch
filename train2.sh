@@ -1,7 +1,9 @@
 #!/bin/bash
 
-store_path="models/20170929"
-log_file="train.log"
+store_path="models/20171003_train2"
+log_file="$store_path/train2.log"
+
+mkdir -p $store_path
 
 cmd="python train.py \
 	--train_manifest data/manifests/train_all.csv \
@@ -16,13 +18,13 @@ cmd="python train.py \
 	--rnn_type lstm \
 	--hidden_size 800 \
 	--hidden_layers 5 \
-	--epochs 100 \
+	--epochs 150 \
 	--cuda \
 	--checkpoint \
 	--checkpoint_per_batch 10000 \
 	--save_folder $store_path \
 	--model_path $store_path/deepspeech.final.pth.tar \
-	--continue_from models/20170927/deepspeech_checkpoint_epoch_001_iter_190000.pth.tar \
+	--continue_from models/20171003_train1/deepspeech.final.pth.tar \
 >> $log_file  2>&1 &"
 
 echo $cmd

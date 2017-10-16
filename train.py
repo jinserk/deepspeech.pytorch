@@ -33,15 +33,15 @@ parser.add_argument('--hidden_layers', default=5, type=int, help='Number of RNN 
 parser.add_argument('--rnn_type', default='lstm', help='Type of the RNN. rnn|gru|lstm are supported')
 parser.add_argument('--epochs', default=50, type=int, help='Number of training epochs')
 parser.add_argument('--cuda', dest='cuda', action='store_true', help='Use cuda to train model')
+parser.add_argument('--optim', default='sgd', type=str, help='Optimization method')
+parser.add_argument('--optim_restart', default=False, type=bool, help='Optimization restart if continute_from exists')
 parser.add_argument('--lr', '--learning-rate', default=3e-4, type=float, help='initial learning rate')
-parser.add_argument('--momentum', default=0.9, type=float, help='momentum')
-#parser.add_argument('--lr', '--learning-rate', default=0.001, type=float, help='initial learning rate')
-#parser.add_argument('--beta1', default=0.9, type=float, help='Adam optimizer beta1')
-#parser.add_argument('--beta2', default=0.999, type=float, help='Adam optimizer beta2')
-#parser.add_argument('--epsilon', default=1e-8, type=float, help='Adam optimizer epsilon')
+parser.add_argument('--momentum', default=0.9, type=float, help='SGD momentum')
+parser.add_argument('--beta1', default=0.9, type=float, help='Adam optimizer beta1')
+parser.add_argument('--beta2', default=0.999, type=float, help='Adam optimizer beta2')
+parser.add_argument('--epsilon', default=1e-8, type=float, help='Adam optimizer epsilon')
 parser.add_argument('--max_norm', default=400, type=int, help='Norm cutoff to prevent explosion of gradients')
 parser.add_argument('--learning_anneal', default=1.1, type=float, help='Annealing applied to learning rate every epoch')
-#parser.add_argument('--learning_anneal', default=1, type=float, help='Annealing applied to learning rate every epoch')
 parser.add_argument('--silent', dest='silent', action='store_true', help='Turn off progress tracking per iteration')
 parser.add_argument('--checkpoint', dest='checkpoint', action='store_true', help='Enables checkpoint saving of model')
 parser.add_argument('--checkpoint_per_batch', default=0, type=int, help='Save checkpoint per batch. 0 means never save')
@@ -163,23 +163,41 @@ def main():
 
     rnn_type = args.rnn_type.lower()
     assert rnn_type in supported_rnns, "rnn_type should be either lstm, rnn or gru"
+
     model = DeepSpeech(rnn_hidden_size=args.hidden_size,
                        nb_layers=args.hidden_layers,
                        labels=labels,
                        rnn_type=supported_rnns[rnn_type],
                        audio_conf=audio_conf,
                        bidirectional=True)
+
     parameters = model.parameters()
-    optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
-    #optimizer = torch.optim.Rprop(parameters, lr=args.lr)
-    #optimizer = torch.optim.Adam(parameters, lr=args.lr, betas=(args.beta1, args.beta2), eps=args.epsilon, weight_decay=0)
+
+    if args.optim == "sgd":
+        log.info(f"optimization: SGD (lr={args.lr}, momentum={args.momentum}, nestrov=True")
+        optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
+    elif args.optim == "rprop":
+        log.info(f"optimization: Rprop (lr={args.lr})")
+        optimizer = torch.optim.Rprop(parameters, lr=args.lr)
+    else: #adam
+        log.info(f"optimization: Adam (lr={args.lr}, betas=({args.beta1}, {args.beta2}), eps={args.epsilon}, weight_decay=0)")
+        optimizer = torch.optim.Adam(parameters, lr=args.lr, betas=(args.beta1, args.beta2), eps=args.epsilon, weight_decay=0)
+        args.learning_anneal = 1.
+
     decoder = GreedyDecoder(labels)
 
     if args.continue_from:
         log.info("Loading checkpoint model %s" % args.continue_from)
         package = torch.load(args.continue_from)
         model.load_state_dict(package['state_dict'])
-        optimizer.load_state_dict(package['optim_dict'])
+        if not args.optim_restart:
+            #optimizer.load_state_dict(package['optim_dict'])
+            # replace lr
+            optim_state = package['optim_dict']
+            optim_state['param_groups'][0]['lr'] = args.lr / (args.learning_anneal ** 10)
+            optimizer.load_state_dict(optim_state)
+            log.info('Learning rate resetting to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
+
         start_epoch = int(package.get('epoch', 1)) - 1  # Python index start at 0 for training
         start_iter = None #package.get('iteration', None)
         if start_iter is None:
@@ -187,9 +205,17 @@ def main():
             start_iter = 0
         else:
             start_iter += 1
+
         avg_loss = int(package.get('avg_loss', 0))
-        loss_results, cer_results, wer_results = package['loss_results'], package[
-            'cer_results'], package['wer_results']
+
+        loss_results, cer_results, wer_results = package['loss_results'], package['cer_results'], package['wer_results']
+        if len(loss_results) < args.epochs:
+            loss_results = torch.cat((loss_results, torch.Tensor(args.epochs - len(loss_results)).zero_()))
+        if len(cer_results) < args.epochs:
+            cer_results = torch.cat((cer_results, torch.Tensor(args.epochs - len(cer_results)).zero_()))
+        if len(wer_results) < args.epochs:
+            wer_results = torch.cat((wer_results, torch.Tensor(args.epochs - len(wer_results)).zero_()))
+
         if args.visdom and \
                         package['loss_results'] is not None and start_epoch > 0:  # Add previous scores to visdom graph
             x_axis = epochs[0:start_epoch]
