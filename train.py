@@ -34,9 +34,10 @@ parser.add_argument('--rnn_type', default='lstm', help='Type of the RNN. rnn|gru
 parser.add_argument('--epochs', default=50, type=int, help='Number of training epochs')
 parser.add_argument('--cuda', dest='cuda', action='store_true', help='Use cuda to train model')
 parser.add_argument('--optim', default='sgd', type=str, help='Optimization method')
-parser.add_argument('--optim_restart', default=False, type=bool, help='Optimization restart if continute_from exists')
+parser.add_argument('--optim_restart', dest='optim_restart', action='store_true', help='Optimization restart if continute_from exists')
 parser.add_argument('--lr', '--learning-rate', default=3e-4, type=float, help='initial learning rate')
 parser.add_argument('--momentum', default=0.9, type=float, help='SGD momentum')
+parser.add_argument('--alpha', default=0.99, type=float, help='RMSprop optimizer alpha')
 parser.add_argument('--beta1', default=0.9, type=float, help='Adam optimizer beta1')
 parser.add_argument('--beta2', default=0.999, type=float, help='Adam optimizer beta2')
 parser.add_argument('--epsilon', default=1e-8, type=float, help='Adam optimizer epsilon')
@@ -169,16 +170,16 @@ def main():
 
     parameters = model.parameters()
 
-    if args.optim == "sgd":
-        log.info(f"optimization: SGD (lr={args.lr}, momentum={args.momentum}, nestrov=True")
-        optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
-    elif args.optim == "rprop":
-        log.info(f"optimization: Rprop (lr={args.lr})")
-        optimizer = torch.optim.Rprop(parameters, lr=args.lr)
-    else: #adam
+    if args.optim == "rmsprop":
+        log.info(f"optimization: RMSprop (lr={args.lr})")
+        optimizer = torch.optim.RMSprop(parameters, lr=args.lr, alpha=args.alpha, eps=args.epsilon, weight_decay=0, momentum=0, centered=False)
+    elif args.optim == "adam":
         log.info(f"optimization: Adam (lr={args.lr}, betas=({args.beta1}, {args.beta2}), eps={args.epsilon}, weight_decay=0)")
         optimizer = torch.optim.Adam(parameters, lr=args.lr, betas=(args.beta1, args.beta2), eps=args.epsilon, weight_decay=0)
         args.learning_anneal = 1.
+    else: #args.optim == "sgd":
+        log.info(f"optimization: SGD (lr={args.lr}, momentum={args.momentum}, nestrov=True")
+        optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
 
     decoder = GreedyDecoder(labels)
 
@@ -194,13 +195,19 @@ def main():
             optimizer.load_state_dict(optim_state)
             log.info('Learning rate resetting to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
 
-        start_epoch = int(package.get('epoch', 1)) - 1  # Python index start at 0 for training
-        start_iter = None #package.get('iteration', None)
-        if start_iter is None:
-            start_epoch += 1  # Assume that we saved a model after an epoch finished, so start at the next epoch.
-            start_iter = 0
+            start_epoch = int(package.get('epoch', 1)) - 1  # Python index start at 0 for training
+            start_iter = package.get('iteration', None)
+            if start_iter is None:
+                start_epoch += 1  # Assume that we saved a model after an epoch finished, so start at the next epoch.
+                start_iter = 0
+            else:
+                start_iter += 1
         else:
-            start_iter += 1
+            start_epoch = 0
+            start_iter = 0
+
+        log.info('Epoch resetting to: {:d}'.format(start_epoch))
+        log.info('iter resetting to: {:d}'.format(start_iter))
 
         avg_loss = int(package.get('avg_loss', 0))
 
