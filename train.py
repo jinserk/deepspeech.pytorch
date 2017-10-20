@@ -1,3 +1,4 @@
+import sys
 import argparse
 import errno
 import json
@@ -5,6 +6,7 @@ import os
 import time
 import logging
 import signal
+from tqdm import tqdm
 
 import torch
 from torch.autograd import Variable
@@ -15,6 +17,9 @@ from data.bucketing_sampler import BucketingSampler, SpectrogramDatasetWithLengt
 from data.data_loader import AudioDataLoader, SpectrogramDataset
 from decoder import GreedyDecoder
 from model import DeepSpeech, supported_rnns
+
+sys.path.append('/home/jbaik/setup/pytorch/YellowFin_Pytorch/tuner_utils')
+from yellowfin import YFOptimizer
 
 parser = argparse.ArgumentParser(description='DeepSpeech training')
 parser.add_argument('--train_manifest', metavar='DIR',
@@ -153,9 +158,9 @@ def main():
                                        normalize=True, augment=args.augment)
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
                                       normalize=True, augment=False)
-    train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size,
+    train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
                                    num_workers=args.num_workers, pin_memory=True)
-    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size,
+    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size, shuffle=True,
                                   num_workers=args.num_workers, pin_memory=True)
 
     rnn_type = args.rnn_type.lower()
@@ -171,14 +176,18 @@ def main():
     parameters = model.parameters()
 
     if args.optim == "rmsprop":
-        log.info(f"optimization: RMSprop (lr={args.lr})")
+        log.info(f"optimization: RMSprop (lr={args.lr}, alpha={args.alpha}, eps={args.epsilon}, weight_decay=0, mementum=0, centered=False)")
         optimizer = torch.optim.RMSprop(parameters, lr=args.lr, alpha=args.alpha, eps=args.epsilon, weight_decay=0, momentum=0, centered=False)
     elif args.optim == "adam":
         log.info(f"optimization: Adam (lr={args.lr}, betas=({args.beta1}, {args.beta2}), eps={args.epsilon}, weight_decay=0)")
         optimizer = torch.optim.Adam(parameters, lr=args.lr, betas=(args.beta1, args.beta2), eps=args.epsilon, weight_decay=0)
         args.learning_anneal = 1.
+    elif args.optim == "yellowfin":
+        log.info(f"optimization: YFOptimizer (lr={args.lr}, mu=0.0)")
+        optimizer = YFOptimizer(parameters, lr=args.lr, mu=0.0)
+        args.learning_anneal = 1.
     else: #args.optim == "sgd":
-        log.info(f"optimization: SGD (lr={args.lr}, momentum={args.momentum}, nestrov=True")
+        log.info(f"optimization: SGD (lr={args.lr}, momentum={args.momentum}, nestrov=True)")
         optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
 
     decoder = GreedyDecoder(labels)
@@ -191,9 +200,8 @@ def main():
             #optimizer.load_state_dict(package['optim_dict'])
             # replace lr
             optim_state = package['optim_dict']
-            optim_state['param_groups'][0]['lr'] = args.lr / (args.learning_anneal ** 10)
+            #optim_state['param_groups'][0]['lr'] = args.lr / (args.learning_anneal ** 10)
             optimizer.load_state_dict(optim_state)
-            log.info('Learning rate resetting to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
 
             start_epoch = int(package.get('epoch', 1)) - 1  # Python index start at 0 for training
             start_iter = package.get('iteration', None)
@@ -202,12 +210,13 @@ def main():
                 start_iter = 0
             else:
                 start_iter += 1
+
+            log.info('Learning rate resetting to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
+            log.info('Epoch resetting to: {:d}'.format(start_epoch))
+            log.info('iter resetting to: {:d}'.format(start_iter))
         else:
             start_epoch = 0
             start_iter = 0
-
-        log.info('Epoch resetting to: {:d}'.format(start_epoch))
-        log.info('iter resetting to: {:d}'.format(start_iter))
 
         avg_loss = int(package.get('avg_loss', 0))
 
@@ -219,8 +228,7 @@ def main():
         if len(wer_results) < args.epochs:
             wer_results = torch.cat((wer_results, torch.Tensor(args.epochs - len(wer_results)).zero_()))
 
-        if args.visdom and \
-                        package['loss_results'] is not None and start_epoch > 0:  # Add previous scores to visdom graph
+        if args.visdom and package['loss_results'] is not None and start_epoch > 0:  # Add previous scores to visdom graph
             x_axis = epochs[0:start_epoch]
             y_axis = torch.stack((loss_results[0:start_epoch], wer_results[0:start_epoch], cer_results[0:start_epoch]),
                                  dim=1)
@@ -229,8 +237,7 @@ def main():
                 Y=y_axis,
                 opts=opts,
             )
-        if args.tensorboard and \
-           package['loss_results'] is not None and start_epoch > 0:  # Previous scores to tensorboard logs
+        if args.tensorboard and package['loss_results'] is not None and start_epoch > 0:  # Previous scores to tensorboard logs
             for i in range(start_epoch):
                 values = {
                     'Avg Train Loss': loss_results[i],
@@ -244,9 +251,12 @@ def main():
                                                          manifest_filepath=args.train_manifest,
                                                          labels=labels, normalize=True, augment=args.augment)
             sampler = BucketingSampler(train_dataset)
-            train_loader.sampler = sampler
+            #train_loader.sampler = sampler
             batch_sampler = BatchSampler(sampler, train_loader.batch_size, train_loader.drop_last)
-            train_loader.batch_sampler = batch_sampler
+            #train_loader.batch_sampler = batch_sampler
+            train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=False,
+                                           sampler=sampler, batch_sampler=batch_sampler,
+                                           num_workers=args.num_workers, pin_memory=True)
     else:
         avg_loss = 0
         start_epoch = 0
@@ -311,11 +321,11 @@ def main():
             end = time.time()
             if not args.silent:
                 log.info('Epoch {0:03d}:  Batch {1:06d} / {2:06d}  '
-                      'Time {batch_time.val:6.3f} (avg {batch_time.avg:6.3f})  '
-                      'Data {data_time.val:6.3f} (avg {data_time.avg:6.3f})  '
-                      'Loss {loss.val:8.4f} (avg {loss.avg:8.4f})'.format(
-                    (epoch + 1), (i + 1), len(train_loader), batch_time=batch_time,
-                    data_time=data_time, loss=losses))
+                         'Time {batch_time.val:6.3f} (avg {batch_time.avg:6.3f})  '
+                         'Data {data_time.val:6.3f} (avg {data_time.avg:6.3f})  '
+                         'Loss {loss.val:8.4f} (avg {loss.avg:8.4f})'.format(
+                         (epoch + 1), (i + 1), len(train_loader), batch_time=batch_time,
+                         data_time=data_time, loss=losses))
             if args.checkpoint_per_batch > 0 and i > 0 and (i + 1) % args.checkpoint_per_batch == 0:
                 file_path = '%s/deepspeech_checkpoint_epoch_%03d_iter_%06d.pth.tar' % (save_folder, epoch + 1, i + 1)
                 log.info("Saving checkpoint model to %s" % file_path)
@@ -334,7 +344,7 @@ def main():
         start_iter = 0 # Reset start iteration for next epoch, and change to full range of train_data
         total_cer, total_wer = 0, 0
         model.eval()
-        for i, (data) in enumerate(test_loader):  # test
+        for i, (data) in enumerate(tqdm(test_loader)):  # test
             inputs, targets, input_percentages, target_sizes = data
 
             inputs = Variable(inputs, volatile=True)
@@ -411,10 +421,11 @@ def main():
                                             wer_results=wer_results, cer_results=cer_results),
                        file_path)
         # anneal lr
-        optim_state = optimizer.state_dict()
-        optim_state['param_groups'][0]['lr'] = optim_state['param_groups'][0]['lr'] / args.learning_anneal
-        optimizer.load_state_dict(optim_state)
-        log.info('Learning rate annealed to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
+        if args.optim != "yellowfin":
+            optim_state = optimizer.state_dict()
+            optim_state['param_groups'][0]['lr'] = optim_state['param_groups'][0]['lr'] / args.learning_anneal
+            optimizer.load_state_dict(optim_state)
+            log.info('Learning rate annealed to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
 
         if best_wer is None or best_wer > wer:
             log.info("Found better validated model, saving to %s" % args.model_path)
@@ -431,9 +442,12 @@ def main():
                                                          manifest_filepath=args.train_manifest,
                                                          labels=labels, normalize=True, augment=args.augment)
             sampler = BucketingSampler(train_dataset)
-            train_loader.sampler = sampler
+            #train_loader.sampler = sampler
             batch_sampler = BatchSampler(sampler, train_loader.batch_size, train_loader.drop_last)
-            train_loader.batch_sampler = batch_sampler
+            #train_loader.batch_sampler = batch_sampler
+            train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=False,
+                                           sampler=sampler, batch_sampler=batch_sampler,
+                                           num_workers=args.num_workers, pin_memory=True)
 
 
 if __name__ == '__main__':
