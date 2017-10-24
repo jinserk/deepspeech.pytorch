@@ -74,11 +74,13 @@ parser.add_argument('--no_bucketing', dest='no_bucketing', action='store_true',
 # create logger
 log = logging.getLogger('deepspeech.pytorch')
 log.setLevel(logging.DEBUG)
-hdr = logging.StreamHandler()
-hdr.setLevel(logging.DEBUG)
 fmt = logging.Formatter('%(asctime)s [%(levelname)s] %(message)s')
-hdr.setFormatter(fmt)
-log.addHandler(hdr)
+
+# console handler
+chdr = logging.StreamHandler()
+chdr.setLevel(logging.DEBUG)
+chdr.setFormatter(fmt)
+log.addHandler(chdr)
 
 
 def to_np(x):
@@ -108,15 +110,31 @@ def main():
     args = parser.parse_args()
     save_folder = args.save_folder
 
-    loss_results, cer_results, wer_results = torch.Tensor(args.epochs), torch.Tensor(args.epochs), torch.Tensor(
-        args.epochs)
+    try:
+        os.makedirs(save_folder, exist_ok=True)
+        # log file handler
+        fhdr = logging.FileHandler("{0}/train.log".format(save_folder))
+        fhdr.setLevel(logging.DEBUG)
+        fhdr.setFormatter(fmt)
+        log.addHandler(fhdr)
+    except OSError as e:
+        raise
+
+    log.critical('Training starts with command:')
+    log.critical('{}'.format(' '.join(sys.argv)))
+
+    loss_results = torch.Tensor(args.epochs)
+    cer_results = torch.Tensor(args.epochs)
+    wer_results = torch.Tensor(args.epochs)
     best_wer = None
+
     if args.visdom:
         from visdom import Visdom
         viz = Visdom()
         opts = dict(title=args.id, ylabel='', xlabel='Epoch', legend=['Loss', 'WER', 'CER'])
         viz_window = None
         epochs = torch.arange(1, args.epochs + 1)
+
     if args.tensorboard:
         try:
             os.makedirs(args.log_dir)
@@ -135,17 +153,11 @@ def main():
         from tensorboardX import SummaryWriter
         tensorboard_writer = SummaryWriter(args.log_dir)
 
-    try:
-        os.makedirs(save_folder)
-    except OSError as e:
-        if e.errno == errno.EEXIST:
-            log.warn('Model Save directory already exists: {}'.format(save_folder))
-        else:
-            raise
     criterion = CTCLoss()
 
     with open(args.labels_path) as label_file:
         labels = str(''.join(json.load(label_file)))
+
     audio_conf = dict(sample_rate=args.sample_rate,
                       window_size=args.window_size,
                       window_stride=args.window_stride,
@@ -218,7 +230,7 @@ def main():
             start_epoch = 0
             start_iter = 0
 
-        avg_loss = int(package.get('avg_loss', 0))
+        avg_loss = float(package.get('avg_loss', 0))
 
         loss_results, cer_results, wer_results = package['loss_results'], package['cer_results'], package['wer_results']
         if len(loss_results) < args.epochs:
@@ -270,6 +282,9 @@ def main():
     batch_time = AverageMeter()
     data_time = AverageMeter()
     losses = AverageMeter()
+
+    if args.tensorboard:
+        bcnt = 0
 
     for epoch in range(start_epoch, args.epochs):
         model.train()
@@ -330,9 +345,18 @@ def main():
                 file_path = '%s/deepspeech_checkpoint_epoch_%03d_iter_%06d.pth.tar' % (save_folder, epoch + 1, i + 1)
                 log.info("Saving checkpoint model to %s" % file_path)
                 torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, iteration=i,
-                                                loss_results=loss_results,
-                                                wer_results=wer_results, cer_results=cer_results, avg_loss=avg_loss),
+                                                loss_results=loss_results, wer_results=wer_results,
+                                                cer_results=cer_results, avg_loss=avg_loss),
                            file_path)
+
+            if args.tensorboard:
+                bcnt += 1
+                values = {
+                    'Batch Loss': losses.val,
+                    'Batch Loss Average': losses.avg,
+                }
+                tensorboard_writer.add_scalars("Batches", values, bcnt)
+
             del loss
             del out
 
