@@ -1,8 +1,8 @@
 #!/bin/bash
 
-model="models/20171023_train02/deepspeech_008.pth.tar"
+model="models/20171026_train05/deepspeech_001.pth.tar"
 decoder="greedy"
-cuda="yes"
+cuda="no"
 lm_path="lm/cantab/lm.binary"
 trie_path="lm/cantab/lm.trie"
 

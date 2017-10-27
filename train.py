@@ -166,13 +166,14 @@ def main():
                       noise_prob=args.noise_prob,
                       noise_levels=(args.noise_min, args.noise_max))
 
+    shuffle = args.no_bucketing
     train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest, labels=labels,
                                        normalize=True, augment=args.augment)
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
                                       normalize=True, augment=False)
-    train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
+    train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=shuffle,
                                    num_workers=args.num_workers, pin_memory=True)
-    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size, shuffle=True,
+    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size, shuffle=shuffle,
                                   num_workers=args.num_workers, pin_memory=True)
 
     rnn_type = args.rnn_type.lower()
@@ -264,11 +265,8 @@ def main():
                                                          labels=labels, normalize=True, augment=args.augment)
             sampler = BucketingSampler(train_dataset)
             #train_loader.sampler = sampler
-            batch_sampler = BatchSampler(sampler, train_loader.batch_size, train_loader.drop_last)
-            #train_loader.batch_sampler = batch_sampler
             train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=False,
-                                           sampler=sampler, batch_sampler=batch_sampler,
-                                           num_workers=args.num_workers, pin_memory=True)
+                                           sampler=sampler, num_workers=args.num_workers, pin_memory=True)
     else:
         avg_loss = 0
         start_epoch = 0
@@ -341,6 +339,7 @@ def main():
                          'Loss {loss.val:8.4f} (avg {loss.avg:8.4f})'.format(
                          (epoch + 1), (i + 1), len(train_loader), batch_time=batch_time,
                          data_time=data_time, loss=losses))
+
             if args.checkpoint_per_batch > 0 and i > 0 and (i + 1) % args.checkpoint_per_batch == 0:
                 file_path = '%s/deepspeech_checkpoint_epoch_%03d_iter_%06d.pth.tar' % (save_folder, epoch + 1, i + 1)
                 log.info("Saving checkpoint model to %s" % file_path)
@@ -441,6 +440,7 @@ def main():
                     tensorboard_writer.add_histogram(tag + '/grad', to_np(value.grad), epoch + 1)
         if args.checkpoint:
             file_path = '%s/deepspeech_%03d.pth.tar' % (save_folder, epoch + 1)
+            log.info("Saving checkpoint model to %s" % file_path)
             torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
                                             wer_results=wer_results, cer_results=cer_results),
                        file_path)
@@ -467,12 +467,8 @@ def main():
                                                          labels=labels, normalize=True, augment=args.augment)
             sampler = BucketingSampler(train_dataset)
             #train_loader.sampler = sampler
-            batch_sampler = BatchSampler(sampler, train_loader.batch_size, train_loader.drop_last)
-            #train_loader.batch_sampler = batch_sampler
             train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=False,
-                                           sampler=sampler, batch_sampler=batch_sampler,
-                                           num_workers=args.num_workers, pin_memory=True)
-
+                                           sampler=sampler, num_workers=args.num_workers, pin_memory=True)
 
 if __name__ == '__main__':
     main()

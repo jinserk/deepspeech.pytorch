@@ -92,6 +92,11 @@ class BatchRNN(nn.Module):
         return x
 
 
+class Swish(nn.Module):
+    def forward(self, x):
+        return x * F.sigmoid(x)
+
+
 class DeepSpeech(nn.Module):
     def __init__(self, rnn_type=nn.LSTM, labels="abc", rnn_hidden_size=768, nb_layers=5, audio_conf=None,
                  bidirectional=True):
@@ -114,10 +119,12 @@ class DeepSpeech(nn.Module):
         self.conv = nn.Sequential(
             nn.Conv2d(1, 32, kernel_size=(41, 11), stride=(2, 2)),
             nn.BatchNorm2d(32),
-            nn.Hardtanh(0, 20, inplace=True),
+            #nn.Hardtanh(0, 20, inplace=True),
+            Swish(),
             nn.Conv2d(32, 32, kernel_size=(21, 11), stride=(2, 1)),
             nn.BatchNorm2d(32),
-            nn.Hardtanh(0, 20, inplace=True)
+            #nn.Hardtanh(0, 20, inplace=True)
+            Swish()
         )
         # Based on above convolutions and spectrogram size using conv formula (W - F + 2P)/ S+1
         rnn_input_size = int(math.floor((sample_rate * window_size) / 2) + 1)

@@ -1,22 +1,21 @@
 #!/bin/bash
 
-store_path="models/20171023_train02"
-continue_from="models/20171019_train02/deepspeech_007.pth.tar"
+store_path="models/20171026_train02"
+continue_from="models/20171025_train01/deepspeech_050.pth.tar"
 
 cmd="python train.py \
 	--train_manifest data/manifests/train02.csv \
 	--val data/manifests/val02.csv \
 	--sample_rate 8000 \
 	--augment \
-	--no_bucketing \
-	--num_workers 16 \
-	--batch_size 16 \
+	--num_workers 64 \
+	--batch_size 64 \
 	--rnn_type lstm \
 	--hidden_size 1024 \
 	--hidden_layers 5 \
 	--epochs 100 \
 	--optim adam \
-	--lr 5e-4 \
+	--lr 1e-3 \
 	--cuda \
 	--tensorboard \
 	--log_dir $store_path/tensorboard \
