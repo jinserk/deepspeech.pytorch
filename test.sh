@@ -1,6 +1,6 @@
 #!/bin/bash
 
-cuda="yes"
+cuda="no"
 
 predict.sh --cuda $cuda --decoder greedy test/conan1-8k.wav
 predict.sh --cuda $cuda --decoder beam test/conan1-8k.wav

@@ -12,9 +12,7 @@ import torch
 from torch.autograd import Variable
 from torch.utils.data.sampler import BatchSampler
 from warpctc_pytorch import CTCLoss
-import numpy as np
-from data.bucketing_sampler import BucketingSampler, SpectrogramDatasetWithLength
-from data.data_loader import AudioDataLoader, SpectrogramDataset
+from data.data_loader import AudioDataLoader, SpectrogramDataset, BucketingSampler
 from decoder import GreedyDecoder
 from model import DeepSpeech, supported_rnns
 
@@ -68,8 +66,8 @@ parser.add_argument('--noise_min', default=0.0,
                     help='Minimum noise level to sample from. (1.0 means all noise, not original signal)', type=float)
 parser.add_argument('--noise_max', default=0.5,
                     help='Maximum noise levels to sample from. Maximum 1.0', type=float)
-parser.add_argument('--no_bucketing', dest='no_bucketing', action='store_true',
-                    help='Turn off bucketing and sample from dataset based on sequence length (smallest to largest)')
+parser.add_argument('--sortagrad', dest='sortagrad', action='store_true',
+                    help='Turn off sampling from dataset based on sequence length (smallest to largest)')
 
 # create logger
 log = logging.getLogger('deepspeech.pytorch')
@@ -166,15 +164,22 @@ def main():
                       noise_prob=args.noise_prob,
                       noise_levels=(args.noise_min, args.noise_max))
 
-    shuffle = args.no_bucketing
     train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest, labels=labels,
                                        normalize=True, augment=args.augment)
+
+    if args.sortagrad:
+        train_sampler = BucketingSampler(train_dataset, batch_size=args.batch_size)
+        train_loader = AudioDataLoader(train_dataset, batch_sampler=train_sampler,
+                                       num_workers=args.num_workers, pin_memory=True)
+    else:
+        train_loader = AudioDataLoader(train_dataset, shuffle=True,
+                                       num_workers=args.num_workers, pin_memory=True)
+        train_sampler = train_loader.batch_sampler
+
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
                                       normalize=True, augment=False)
-    train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=shuffle,
-                                   num_workers=args.num_workers, pin_memory=True)
-    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size, shuffle=shuffle,
-                                  num_workers=args.num_workers, pin_memory=True)
+    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size,
+                                  num_workers=args.num_workers)
 
     rnn_type = args.rnn_type.lower()
     assert rnn_type in supported_rnns, "rnn_type should be either lstm, rnn or gru"
@@ -258,15 +263,10 @@ def main():
                     'Avg CER': cer_results[i]
                 }
                 tensorboard_writer.add_scalars(args.id, values, i + 1)
-        if not args.no_bucketing and start_epoch != 0:
-            log.info("Using bucketing sampler for the following epochs")
-            train_dataset = SpectrogramDatasetWithLength(audio_conf=audio_conf,
-                                                         manifest_filepath=args.train_manifest,
-                                                         labels=labels, normalize=True, augment=args.augment)
-            sampler = BucketingSampler(train_dataset)
-            #train_loader.sampler = sampler
-            train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=False,
-                                           sampler=sampler, num_workers=args.num_workers, pin_memory=True)
+
+        #if not args.no_shuffle and start_epoch != 0:
+        #    print("Shuffling batches for the following epochs")
+        #    train_sampler.shuffle()
     else:
         avg_loss = 0
         start_epoch = 0
@@ -287,7 +287,9 @@ def main():
     for epoch in range(start_epoch, args.epochs):
         model.train()
         end = time.time()
-        for i, (data) in enumerate(train_loader):
+        for i, (data) in enumerate(train_loader, start=start_iter):
+            if i == len(train_sampler):
+                break
             inputs, targets, input_percentages, target_sizes = data
             # measure data loading time
             data_time.update(time.time() - end)
@@ -337,7 +339,7 @@ def main():
                          'Time {batch_time.val:6.3f} (avg {batch_time.avg:6.3f})  '
                          'Data {data_time.val:6.3f} (avg {data_time.avg:6.3f})  '
                          'Loss {loss.val:8.4f} (avg {loss.avg:8.4f})'.format(
-                         (epoch + 1), (i + 1), len(train_loader), batch_time=batch_time,
+                         (epoch + 1), (i + 1), len(train_sampler), batch_time=batch_time,
                          data_time=data_time, loss=losses))
 
             if args.checkpoint_per_batch > 0 and i > 0 and (i + 1) % args.checkpoint_per_batch == 0:
@@ -359,7 +361,7 @@ def main():
             del loss
             del out
 
-        avg_loss /= len(train_loader)
+        avg_loss /= len(train_sampler)
 
         log.info('Training Summary Epoch {0:03d}:  '
                  'Average Loss {loss:8.4f}'.format((epoch + 1), loss=avg_loss))
@@ -460,15 +462,10 @@ def main():
 
         avg_loss = 0
 
-        if not args.no_bucketing and epoch == 0:
-            log.info("Switching to bucketing sampler for following epochs")
-            train_dataset = SpectrogramDatasetWithLength(audio_conf=audio_conf,
-                                                         manifest_filepath=args.train_manifest,
-                                                         labels=labels, normalize=True, augment=args.augment)
-            sampler = BucketingSampler(train_dataset)
-            #train_loader.sampler = sampler
-            train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=False,
-                                           sampler=sampler, num_workers=args.num_workers, pin_memory=True)
+        if args.sortagrad:
+            print("Shuffling batches...")
+            train_sampler.shuffle()
+
 
 if __name__ == '__main__':
     main()

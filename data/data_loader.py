@@ -1,6 +1,7 @@
 import os
 import subprocess
 from tempfile import NamedTemporaryFile
+from torch.utils.data.sampler import Sampler
 
 import librosa
 import numpy as np
@@ -73,8 +74,8 @@ class NoiseInjection(object):
         noise_end = noise_start + data_len
         noise = audio_with_sox(noise_path, self.sample_rate, noise_start, noise_end)
         assert len(data) == len(noise)
-        noise_energy = np.sqrt(noise.dot(noise)/noise.size)
-        data_energy = np.sqrt(data.dot(data)/data.size)
+        noise_energy = np.sqrt(noise.dot(noise) / noise.size)
+        data_energy = np.sqrt(data.dot(data) / data.size)
         noise *= noise_level * data_energy / noise_energy
         data += noise
         return data, noise
@@ -203,6 +204,28 @@ class AudioDataLoader(DataLoader):
         self.collate_fn = _collate_fn
 
 
+class BucketingSampler(Sampler):
+    def __init__(self, data_source, batch_size=1):
+        """
+        Samples batches assuming they are in order of size to batch similarly sized samples together.
+        """
+        super(BucketingSampler, self).__init__(data_source)
+        self.data_source = data_source
+        ids = list(range(0, len(data_source)))
+        self.bins = [ids[i:i + batch_size] for i in range(0, len(ids), batch_size)]
+
+    def __iter__(self):
+        for ids in self.bins:
+            np.random.shuffle(ids)
+            yield ids
+
+    def __len__(self):
+        return len(self.bins)
+
+    def shuffle(self):
+        np.random.shuffle(self.bins)
+
+
 def get_audio_length(path, samp=False):
     if samp:
         flag = '-s' # return number of samples
@@ -215,6 +238,11 @@ def get_audio_length(path, samp=False):
         return int(output)
     else:
         return float(output)
+
+
+#def get_audio_length(path):
+#    output = subprocess.check_output(['soxi -D \"%s\"' % path.strip()], shell=True)
+#    return float(output)
 
 
 def audio_with_sox(path, sample_rate, start_time, end_time):
