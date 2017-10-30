@@ -58,6 +58,8 @@ parser.add_argument('--save_folder', default='models/', help='Location to save e
 parser.add_argument('--model_path', default='models/deepspeech_final.pth.tar',
                     help='Location to save best validation model')
 parser.add_argument('--continue_from', default='', help='Continue from checkpoint model')
+parser.add_argument('--finetune', dest='finetune', action='store_true',
+                    help='Finetune the model from checkpoint "continue_from"')
 parser.add_argument('--augment', dest='augment', action='store_true', help='Use random tempo and gain perturbations.')
 parser.add_argument('--noise_dir', default=None,
                     help='Directory to inject noise into audio. If default, noise Inject not added')
@@ -138,7 +140,7 @@ def main():
             os.makedirs(args.log_dir)
         except OSError as e:
             if e.errno == errno.EEXIST:
-                log.warn('Tensorboard log directory already exists: {}'.format(args.log_dir))
+                log.warning('Tensorboard log directory already exists: {}'.format(args.log_dir))
                 for file in os.listdir(args.log_dir):
                     file_path = os.path.join(args.log_dir, file)
                     try:
@@ -213,7 +215,7 @@ def main():
 
     decoder = GreedyDecoder(labels)
 
-    if args.continue_from:
+    if args.continue_from and not args.finetune:
         log.info("Loading checkpoint model %s" % args.continue_from)
         package = torch.load(args.continue_from)
         model.load_state_dict(package['state_dict'])
@@ -266,10 +268,16 @@ def main():
                     'Avg CER': cer_results[i]
                 }
                 tensorboard_writer.add_scalars(args.id, values, i + 1)
-
         #if not args.no_shuffle and start_epoch != 0:
         #    print("Shuffling batches for the following epochs")
         #    train_sampler.shuffle()
+    elif args.continue_from and args.finetune:
+        log.info("Fine-tuning checkpoint model %s" % args.continue_from)
+        package = torch.load(args.continue_from)
+        model.load_state_dict(package['state_dict'])
+        avg_loss = 0
+        start_epoch = 0
+        start_iter = 0
     else:
         avg_loss = 0
         start_epoch = 0
@@ -316,7 +324,7 @@ def main():
             loss_sum = loss.data.sum()
             inf = float("inf")
             if loss_sum == inf or loss_sum == -inf:
-                log.warn("received an inf loss, setting loss value to 0")
+                log.warning("received an inf loss, setting loss value to 0")
                 loss_value = 0
             else:
                 loss_value = loss.data[0]

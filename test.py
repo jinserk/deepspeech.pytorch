@@ -26,9 +26,16 @@ beam_args.add_argument('--trie_path', default=None, type=str,
 beam_args.add_argument('--lm_alpha', default=0.8, type=float, help='Language model weight')
 beam_args.add_argument('--lm_beta1', default=1, type=float, help='Language model word bonus (all words)')
 beam_args.add_argument('--lm_beta2', default=1, type=float, help='Language model word bonus (IV words)')
+beam_args.add_argument('--label_size', default=0, type=int, help='Label selection size controls how many items in '
+                                                                 'each beam are passed through to the beam scorer')
+beam_args.add_argument('--label_margin', default=-1, type=float, help='Controls difference between minimal input score '
+                                                                      'for an item to be passed to the beam scorer.')
 args = parser.parse_args()
 
 if __name__ == '__main__':
+    if not torch.cuda.is_available():
+        args.cuda = False
+
     model = DeepSpeech.load_model(args.model_path, cuda=args.cuda)
     model.eval()
 
@@ -41,14 +48,14 @@ if __name__ == '__main__':
         decoder = BeamCTCDecoder(labels, beam_width=args.beam_width, top_paths=1, space_index=labels.index(' '),
                                  blank_index=labels.index('_'), lm_path=args.lm_path,
                                  trie_path=args.trie_path, lm_alpha=args.lm_alpha, lm_beta1=args.lm_beta1,
-                                 lm_beta2=args.lm_beta2)
+                                 lm_beta2=args.lm_beta2, label_size=args.label_size, label_margin=args.label_margin)
     else:
         decoder = GreedyDecoder(labels, space_index=labels.index(' '), blank_index=labels.index('_'))
 
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.test_manifest, labels=labels,
                                       normalize=True)
     test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size,
-                                  num_workers=args.num_workers, pin_memory=False)
+                                  num_workers=args.num_workers, pin_memory=args.cuda)
     total_cer, total_wer = 0, 0
     for i, (data) in tqdm(enumerate(test_loader), total=len(test_loader)):
         inputs, targets, input_percentages, target_sizes = data
