@@ -1,6 +1,4 @@
 import argparse
-import sys
-import time
 
 from decoder import GreedyDecoder
 
@@ -26,6 +24,7 @@ beam_args.add_argument('--trie_path', default=None, type=str,
 beam_args.add_argument('--lm_alpha', default=0.8, type=float, help='Language model weight')
 beam_args.add_argument('--lm_beta1', default=1, type=float, help='Language model word bonus (all words)')
 beam_args.add_argument('--lm_beta2', default=1, type=float, help='Language model word bonus (IV words)')
+parser.add_argument('--offsets', dest='offsets', action='store_true', help='Returns time offset information')
 args = parser.parse_args()
 
 if __name__ == '__main__':
@@ -37,6 +36,7 @@ if __name__ == '__main__':
 
     if args.decoder == "beam":
         from decoder import BeamCTCDecoder
+
         decoder = BeamCTCDecoder(labels, beam_width=args.beam_width, top_paths=1, space_index=labels.index(' '),
                                  blank_index=labels.index('_'), lm_path=args.lm_path,
                                  trie_path=args.trie_path, lm_alpha=args.lm_alpha, lm_beta1=args.lm_beta1,
@@ -46,7 +46,6 @@ if __name__ == '__main__':
 
     parser = SpectrogramParser(audio_conf, normalize=True)
 
-    t0 = time.time()
     spect = parser.parse_audio(args.audio_path).contiguous()
     spect = spect.view(1, 1, spect.size(0), spect.size(1))
     out = model(Variable(spect, volatile=True))
@@ -57,6 +56,8 @@ if __name__ == '__main__':
 
     print(decoded_output[0])
     #print(corrected_output)
+    if args.offsets:
+        print(decoded_offsets[0])
 
     length = spect.size(3) * audio_conf['window_stride']
     elapse = t1 - t0
