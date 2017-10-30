@@ -151,6 +151,9 @@ def main():
         from tensorboardX import SummaryWriter
         tensorboard_writer = SummaryWriter(args.log_dir)
 
+    if not torch.cuda.is_available():
+        args.cuda = False
+
     criterion = CTCLoss()
 
     with open(args.labels_path) as label_file:
@@ -170,10 +173,10 @@ def main():
     if args.sortagrad:
         train_sampler = BucketingSampler(train_dataset, batch_size=args.batch_size)
         train_loader = AudioDataLoader(train_dataset, batch_sampler=train_sampler,
-                                       num_workers=args.num_workers, pin_memory=True)
+                                       num_workers=args.num_workers, pin_memory=args.cuda)
     else:
         train_loader = AudioDataLoader(train_dataset, shuffle=True,
-                                       num_workers=args.num_workers, pin_memory=True)
+                                       num_workers=args.num_workers, pin_memory=args.cuda)
         train_sampler = train_loader.batch_sampler
 
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
@@ -204,7 +207,7 @@ def main():
         log.info(f"optimization: YFOptimizer (lr={args.lr}, mu=0.0)")
         optimizer = YFOptimizer(parameters, lr=args.lr, mu=0.0)
         args.learning_anneal = 1.
-    else: #args.optim == "sgd":
+    else:  # args.optim == "sgd":
         log.info(f"optimization: SGD (lr={args.lr}, momentum={args.momentum}, nestrov=True)")
         optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
 
@@ -271,6 +274,7 @@ def main():
         avg_loss = 0
         start_epoch = 0
         start_iter = 0
+
     if args.cuda:
         model = torch.nn.DataParallel(model).cuda()
 
@@ -366,7 +370,7 @@ def main():
         log.info('Training Summary Epoch {0:03d}:  '
                  'Average Loss {loss:8.4f}'.format((epoch + 1), loss=avg_loss))
 
-        start_iter = 0 # Reset start iteration for next epoch, and change to full range of train_data
+        start_iter = 0  # Reset start iteration for next epoch, and change to full range of train_data
         total_cer, total_wer = 0, 0
         model.eval()
         for i, (data) in enumerate(tqdm(test_loader)):  # test
