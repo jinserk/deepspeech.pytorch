@@ -1,3 +1,5 @@
+import sys
+import time
 import argparse
 
 from decoder import GreedyDecoder
@@ -50,6 +52,7 @@ if __name__ == '__main__':
 
     parser = SpectrogramParser(audio_conf, normalize=True)
 
+    t0 = time.time()
     spect = parser.parse_audio(args.audio_path).contiguous()
     spect = spect.view(1, 1, spect.size(0), spect.size(1))
     out = model(Variable(spect, volatile=True))
