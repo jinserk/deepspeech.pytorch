@@ -23,9 +23,9 @@ def load_audio(path):
             sound = sound.squeeze()
         else:
             sound = sound.mean(axis=1)  # multiple channels, average
-    minlen = int(sample_rate/2)
+    minlen = int(sample_rate / 2)
     if len(sound) < minlen:
-        padding = np.zeros((minlen-len(sound),))
+        padding = np.zeros((minlen - len(sound),))
         sound = np.concatenate((sound, padding))
     return sound, sample_rate
 
@@ -79,6 +79,7 @@ class NoiseInjection(object):
         noise *= noise_level * data_energy / noise_energy
         data += noise
         return data, noise
+
 
 class SpectrogramParser(AudioParser):
     def __init__(self, audio_conf, normalize=False, augment=False):
@@ -228,9 +229,9 @@ class BucketingSampler(Sampler):
 
 def get_audio_length(path, samp=False):
     if samp:
-        flag = '-s' # return number of samples
+        flag = '-s'  # return number of samples
     else:
-        flag = '-D' # return length of time in secs
+        flag = '-D'  # return length of time in secs
 
     output = subprocess.check_output(['soxi {} \"{}\"'.format(flag, path.strip())], shell=True)
 
