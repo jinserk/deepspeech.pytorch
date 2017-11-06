@@ -1,11 +1,11 @@
 #!/bin/bash
 
-store_path="models/20171025_train01"
+store_path="models/20171030_train01"
 #continue_from="models/20171025_train01/deepspeech_001.pth.tar"
 
 cmd="python train.py \
-	--train_manifest data/manifests/train01.csv \
-	--val data/manifests/val01.csv \
+	--train_manifest data/ted/ted_train_manifest.csv \
+	--val data/ted/ted_val_manifest.csv \
 	--sample_rate 8000 \
 	--augment \
 	--num_workers 64 \
@@ -16,7 +16,7 @@ cmd="python train.py \
 	--epochs 100 \
 	--optim adam \
 	--lr 1e-3 \
-	--cuda \
+	--sortagrad \
 	--tensorboard \
 	--log_dir $store_path/tensorboard \
 	--checkpoint \
