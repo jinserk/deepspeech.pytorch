@@ -61,7 +61,7 @@ if __name__ == '__main__':
     #corrected_output = correction(decoded_output[0], labels)
     t1 = time.time()
 
-    print(decoded_output[0])
+    print(decoded_output[0][0])
     #print(corrected_output)
     if args.offsets:
         print(decoded_offsets[0])

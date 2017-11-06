@@ -177,7 +177,7 @@ def main():
         train_loader = AudioDataLoader(train_dataset, batch_sampler=train_sampler,
                                        num_workers=args.num_workers, pin_memory=args.cuda)
     else:
-        train_loader = AudioDataLoader(train_dataset, shuffle=True,
+        train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
                                        num_workers=args.num_workers, pin_memory=args.cuda)
         train_sampler = train_loader.batch_sampler
 
