@@ -42,12 +42,11 @@ pip install cffi
 python setup.py install
 ```
 
-If you want decoding to support beam search with an optional language model, install pytorch-ctc:
+If you want decoding to support beam search with an optional language model, install ctcdecode:
 ```
-git clone --recursive https://github.com/parlance/pytorch-ctc.git
-cd pytorch-ctc
-pip install -r requirements.txt
-python setup.py install
+git clone --recursive https://github.com/parlance/ctcdecode.git
+cd ctcdecode
+pip install .
 ```
 
 Finally clone this repo and run this within the repo:
@@ -212,6 +211,9 @@ python train.py --continue_from models/deepspeech_checkpoint_epoch_N_iter_N.pth.
 
 This continues from the same training state as well as recreates the visdom graph to continue from if enabled.
 
+If you would like to start from a previous checkpoint model but not continue training, add the `--finetune` flag to restart training
+from the `--continue_from` weights.
+
 ### Choosing batch sizes
 
 Included is a script that can be used to benchmark whether training can occur on your hardware, and the limits on the size of the model/batch
@@ -250,15 +252,11 @@ python transcribe.py --model_path models/deepspeech.pth.tar --audio_path /path/t
 ### Alternate Decoders
 By default, `test.py` and `transcribe.py` use a `GreedyDecoder` which picks the highest-likelihood output label at each timestep. Repeated and blank symbols are then filtered to give the final output.
 
-A beam search decoder can optionally be used with the installation of the `pytorch-ctc` library as described in the Installation section. The `test` and `transcribe` scripts have a `--decoder` argument. To use the beam decoder, add `--decoder beam`. The beam decoder enables additional decoding parameters:
+A beam search decoder can optionally be used with the installation of the `ctcdecode` library as described in the Installation section. The `test` and `transcribe` scripts have a `--decoder` argument. To use the beam decoder, add `--decoder beam`. The beam decoder enables additional decoding parameters:
 - **beam_width** how many beams to consider at each timestep
 - **lm_path** optional binary KenLM language model to use for decoding
-- **trie_path** trie describing lexicon. required if `lm_path` is supplied
-- **lm_alpha** weight for language model
-- **lm_beta1** bonus weight for words
-- **lm_beta2** bonus weight for in-vocabulary words
-- **label_size** Label selection size controls how many items in each beam are passed through to the beam scorer
-- **label_margin** Controls difference between minimal input score for an item to be passed to the beam scorer
+- **alpha** weight for language model
+- **beta** bonus weight for words
 
 ### Time offsets
 

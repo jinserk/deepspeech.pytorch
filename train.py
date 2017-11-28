@@ -6,11 +6,10 @@ import os
 import time
 import logging
 import signal
-from tqdm import tqdm
 
 import torch
+from tqdm import tqdm
 from torch.autograd import Variable
-from torch.utils.data.sampler import BatchSampler
 from warpctc_pytorch import CTCLoss
 from data.data_loader import AudioDataLoader, SpectrogramDataset, BucketingSampler
 from decoder import GreedyDecoder
@@ -68,8 +67,12 @@ parser.add_argument('--noise_min', default=0.0,
                     help='Minimum noise level to sample from. (1.0 means all noise, not original signal)', type=float)
 parser.add_argument('--noise_max', default=0.5,
                     help='Maximum noise levels to sample from. Maximum 1.0', type=float)
-parser.add_argument('--sortagrad', dest='sortagrad', action='store_true',
-                    help='Turn off sampling from dataset based on sequence length (smallest to largest)')
+#parser.add_argument('--sortagrad', dest='sortagrad', action='store_true',
+#                    help='Turn off sampling from dataset based on sequence length (smallest to largest)')
+parser.add_argument('--no_shuffle', dest='no_shuffle', action='store_true',
+                    help='Turn off shuffling and sample from dataset based on sequence length (smallest to largest)')
+parser.add_argument('--no_bidirectional', dest='bidirectional', action='store_false', default=True,
+                    help='Turn off bi-directional RNNs, introduces lookahead convolution')
 
 # create logger
 log = logging.getLogger('deepspeech.pytorch')
@@ -81,7 +84,6 @@ chdr = logging.StreamHandler()
 chdr.setLevel(logging.DEBUG)
 chdr.setFormatter(fmt)
 log.addHandler(chdr)
-
 
 def to_np(x):
     return x.data.cpu().numpy()
@@ -104,7 +106,7 @@ class AverageMeter(object):
         self.avg += (val - self.avg) / self.count
 
 
-def main():
+if __name__ == '__main__':
     args = parser.parse_args()
     save_folder = args.save_folder
 
@@ -128,6 +130,7 @@ def main():
 
     if args.visdom:
         from visdom import Visdom
+
         viz = Visdom()
         opts = dict(title=args.id, ylabel='', xlabel='Epoch', legend=['Loss', 'WER', 'CER'])
         viz_window = None
@@ -144,11 +147,12 @@ def main():
                     try:
                         if os.path.isfile(file_path):
                             os.unlink(file_path)
-                    except Exception as e:
+                    except Exception:
                         raise
             else:
                 raise
         from tensorboardX import SummaryWriter
+
         tensorboard_writer = SummaryWriter(args.log_dir)
 
     if not torch.cuda.is_available():
@@ -156,130 +160,211 @@ def main():
 
     criterion = CTCLoss()
 
-    with open(args.labels_path) as label_file:
-        labels = str(''.join(json.load(label_file)))
-
-    audio_conf = dict(sample_rate=args.sample_rate,
-                      window_size=args.window_size,
-                      window_stride=args.window_stride,
-                      window=args.window,
-                      noise_dir=args.noise_dir,
-                      noise_prob=args.noise_prob,
-                      noise_levels=(args.noise_min, args.noise_max))
-
-    train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest, labels=labels,
-                                       normalize=True, augment=args.augment)
-
-    if args.sortagrad:
-        train_sampler = BucketingSampler(train_dataset, batch_size=args.batch_size)
-        train_loader = AudioDataLoader(train_dataset, batch_sampler=train_sampler,
-                                       num_workers=args.num_workers, pin_memory=args.cuda)
-    else:
-        train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
-                                       num_workers=args.num_workers, pin_memory=args.cuda)
-        train_sampler = train_loader.batch_sampler
-
-    test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
-                                      normalize=True, augment=False)
-    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size, shuffle=True,
-                                  num_workers=args.num_workers)
-
-    rnn_type = args.rnn_type.lower()
-    assert rnn_type in supported_rnns, "rnn_type should be either lstm, rnn or gru"
-
-    model = DeepSpeech(rnn_hidden_size=args.hidden_size,
-                       nb_layers=args.hidden_layers,
-                       labels=labels,
-                       rnn_type=supported_rnns[rnn_type],
-                       audio_conf=audio_conf,
-                       bidirectional=True)
-
-    parameters = model.parameters()
-
-    if args.optim == "rmsprop":
-        log.info(f"optimization: RMSprop (lr={args.lr}, alpha={args.alpha}, eps={args.epsilon}, weight_decay=0, mementum=0, centered=False)")
-        optimizer = torch.optim.RMSprop(parameters, lr=args.lr, alpha=args.alpha, eps=args.epsilon, weight_decay=0, momentum=0, centered=False)
-    elif args.optim == "adam":
-        log.info(f"optimization: Adam (lr={args.lr}, betas=({args.beta1}, {args.beta2}), eps={args.epsilon}, weight_decay=0)")
-        optimizer = torch.optim.Adam(parameters, lr=args.lr, betas=(args.beta1, args.beta2), eps=args.epsilon, weight_decay=0)
-        args.learning_anneal = 1.
-    elif args.optim == "yellowfin":
-        log.info(f"optimization: YFOptimizer (lr={args.lr}, mu=0.0)")
-        optimizer = YFOptimizer(parameters, lr=args.lr, mu=0.0)
-        args.learning_anneal = 1.
-    else:  # args.optim == "sgd":
-        log.info(f"optimization: SGD (lr={args.lr}, momentum={args.momentum}, nestrov=True)")
-        optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
-
-    decoder = GreedyDecoder(labels)
-
-    if args.continue_from and not args.finetune:
+    avg_loss, start_epoch, start_iter = 0, 0, 0
+    if args.continue_from:  # Starting from previous model
         log.info("Loading checkpoint model %s" % args.continue_from)
-        package = torch.load(args.continue_from)
-        model.load_state_dict(package['state_dict'])
-        if not args.optim_restart:
-            #optimizer.load_state_dict(package['optim_dict'])
-            # replace lr
-            optim_state = package['optim_dict']
-            #optim_state['param_groups'][0]['lr'] = args.lr / (args.learning_anneal ** 10)
-            optimizer.load_state_dict(optim_state)
-
-            start_epoch = int(package.get('epoch', 1)) - 1  # Python index start at 0 for training
+        package = torch.load(args.continue_from, map_location=lambda storage, loc: storage)
+        model = DeepSpeech.load_model_package(package)
+        labels = DeepSpeech.get_labels(model)
+        audio_conf = DeepSpeech.get_audio_conf(model)
+        parameters = model.parameters()
+        optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
+        if not args.finetune:  # Don't want to restart training
+            optimizer.load_state_dict(package['optim_dict'])
+            start_epoch = int(package.get('epoch', 1)) - 1  # Index start at 0 for training
             start_iter = package.get('iteration', None)
             if start_iter is None:
-                start_epoch += 1  # Assume that we saved a model after an epoch finished, so start at the next epoch.
+                start_epoch += 1  # We saved model after epoch finished, start at the next epoch.
                 start_iter = 0
             else:
                 start_iter += 1
-
-            log.info('Learning rate resetting to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
-            log.info('Epoch resetting to: {:d}'.format(start_epoch))
-            log.info('iter resetting to: {:d}'.format(start_iter))
-        else:
-            start_epoch = 0
-            start_iter = 0
-
-        avg_loss = float(package.get('avg_loss', 0))
-
-        loss_results, cer_results, wer_results = package['loss_results'], package['cer_results'], package['wer_results']
-        if len(loss_results) < args.epochs:
-            loss_results = torch.cat((loss_results, torch.Tensor(args.epochs - len(loss_results)).zero_()))
-        if len(cer_results) < args.epochs:
-            cer_results = torch.cat((cer_results, torch.Tensor(args.epochs - len(cer_results)).zero_()))
-        if len(wer_results) < args.epochs:
-            wer_results = torch.cat((wer_results, torch.Tensor(args.epochs - len(wer_results)).zero_()))
-
-        if args.visdom and package['loss_results'] is not None and start_epoch > 0:  # Add previous scores to visdom graph
-            x_axis = epochs[0:start_epoch]
-            y_axis = torch.stack((loss_results[0:start_epoch], wer_results[0:start_epoch], cer_results[0:start_epoch]),
-                                 dim=1)
-            viz_window = viz.line(
-                X=x_axis,
-                Y=y_axis,
-                opts=opts,
-            )
-        if args.tensorboard and package['loss_results'] is not None and start_epoch > 0:  # Previous scores to tensorboard logs
-            for i in range(start_epoch):
-                values = {
-                    'Avg Train Loss': loss_results[i],
-                    'Avg WER': wer_results[i],
-                    'Avg CER': cer_results[i]
-                }
-                tensorboard_writer.add_scalars(args.id, values, i + 1)
-        #if not args.no_shuffle and start_epoch != 0:
-        #    print("Shuffling batches for the following epochs")
-        #    train_sampler.shuffle()
-    elif args.continue_from and args.finetune:
-        log.info("Fine-tuning checkpoint model %s" % args.continue_from)
-        package = torch.load(args.continue_from)
-        model.load_state_dict(package['state_dict'])
-        avg_loss = 0
-        start_epoch = 0
-        start_iter = 0
+            avg_loss = int(package.get('avg_loss', 0))
+            loss_results, cer_results, wer_results = package['loss_results'], package[
+                'cer_results'], package['wer_results']
+            if args.visdom and \
+                            package[
+                                'loss_results'] is not None and start_epoch > 0:  # Add previous scores to visdom graph
+                x_axis = epochs[0:start_epoch]
+                y_axis = torch.stack(
+                    (loss_results[0:start_epoch], wer_results[0:start_epoch], cer_results[0:start_epoch]),
+                    dim=1)
+                viz_window = viz.line(
+                    X=x_axis,
+                    Y=y_axis,
+                    opts=opts,
+                )
+            if args.tensorboard and package['loss_results'] is not None and start_epoch > 0:  # Previous scores to tensorboard logs
+                for i in range(start_epoch):
+                    values = {
+                        'Avg Train Loss': loss_results[i],
+                        'Avg WER': wer_results[i],
+                        'Avg CER': cer_results[i]
+                    }
+                    tensorboard_writer.add_scalars(args.id, values, i + 1)
     else:
-        avg_loss = 0
-        start_epoch = 0
-        start_iter = 0
+        with open(args.labels_path) as label_file:
+            labels = str(''.join(json.load(label_file)))
+
+        audio_conf = dict(sample_rate=args.sample_rate,
+                          window_size=args.window_size,
+                          window_stride=args.window_stride,
+                          window=args.window,
+                          noise_dir=args.noise_dir,
+                          noise_prob=args.noise_prob,
+                          noise_levels=(args.noise_min, args.noise_max))
+
+        rnn_type = args.rnn_type.lower()
+        assert rnn_type in supported_rnns, "rnn_type should be either lstm, rnn or gru"
+        model = DeepSpeech(rnn_hidden_size=args.hidden_size,
+                           nb_layers=args.hidden_layers,
+                           labels=labels,
+                           rnn_type=supported_rnns[rnn_type],
+                           audio_conf=audio_conf,
+                           bidirectional=args.bidirectional)
+        parameters = model.parameters()
+        optimizer = torch.optim.SGD(parameters, lr=args.lr,
+                                    momentum=args.momentum, nesterov=True)
+
+    decoder = GreedyDecoder(labels)
+    train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest, labels=labels,
+                                       normalize=True, augment=args.augment)
+    test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
+                                      normalize=True, augment=False)
+    train_sampler = BucketingSampler(train_dataset, batch_size=args.batch_size)
+    train_loader = AudioDataLoader(train_dataset,
+                                   num_workers=args.num_workers, batch_sampler=train_sampler)
+    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size,
+                                  num_workers=args.num_workers)
+
+    if not args.no_shuffle and start_epoch != 0:
+        log.info("Shuffling batches for the following epochs")
+        train_sampler.shuffle()
+
+#    with open(args.labels_path) as label_file:
+#        labels = str(''.join(json.load(label_file)))
+#
+#    audio_conf = dict(sample_rate=args.sample_rate,
+#                      window_size=args.window_size,
+#                      window_stride=args.window_stride,
+#                      window=args.window,
+#                      noise_dir=args.noise_dir,
+#                      noise_prob=args.noise_prob,
+#                      noise_levels=(args.noise_min, args.noise_max))
+#
+#    rnn_type = args.rnn_type.lower()
+#    assert rnn_type in supported_rnns, "rnn_type should be either lstm, rnn or gru"
+#
+#    model = DeepSpeech(rnn_hidden_size=args.hidden_size,
+#                       nb_layers=args.hidden_layers,
+#                       labels=labels,
+#                       rnn_type=supported_rnns[rnn_type],
+#                       audio_conf=audio_conf,
+#                       bidirectional=True)
+#
+#    parameters = model.parameters()
+#
+#    if args.optim == "rmsprop":
+#        log.info(f"optimization: RMSprop (lr={args.lr}, alpha={args.alpha}, eps={args.epsilon}, weight_decay=0, mementum=0, centered=False)")
+#        optimizer = torch.optim.RMSprop(parameters, lr=args.lr, alpha=args.alpha, eps=args.epsilon, weight_decay=0, momentum=0, centered=False)
+#    elif args.optim == "adam":
+#        log.info(f"optimization: Adam (lr={args.lr}, betas=({args.beta1}, {args.beta2}), eps={args.epsilon}, weight_decay=0)")
+#        optimizer = torch.optim.Adam(parameters, lr=args.lr, betas=(args.beta1, args.beta2), eps=args.epsilon, weight_decay=0)
+#        args.learning_anneal = 1.
+#    elif args.optim == "yellowfin":
+#        log.info(f"optimization: YFOptimizer (lr={args.lr}, mu=0.0)")
+#        optimizer = YFOptimizer(parameters, lr=args.lr, mu=0.0)
+#        args.learning_anneal = 1.
+#    else:  # args.optim == "sgd":
+#        log.info(f"optimization: SGD (lr={args.lr}, momentum={args.momentum}, nestrov=True)")
+#        optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
+#
+#    decoder = GreedyDecoder(labels)
+#
+#    if args.continue_from and not args.finetune:
+#        log.info("Loading checkpoint model %s" % args.continue_from)
+#        package = torch.load(args.continue_from)
+#        model.load_state_dict(package['state_dict'])
+#        if not args.optim_restart:
+#            #optimizer.load_state_dict(package['optim_dict'])
+#            # replace lr
+#            optim_state = package['optim_dict']
+#            #optim_state['param_groups'][0]['lr'] = args.lr / (args.learning_anneal ** 10)
+#            optimizer.load_state_dict(optim_state)
+#
+#            start_epoch = int(package.get('epoch', 1)) - 1  # Python index start at 0 for training
+#            start_iter = package.get('iteration', None)
+#            if start_iter is None:
+#                start_epoch += 1  # Assume that we saved a model after an epoch finished, so start at the next epoch.
+#                start_iter = 0
+#            else:
+#                start_iter += 1
+#
+#            log.info('Learning rate resetting to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
+#            log.info('Epoch resetting to: {:d}'.format(start_epoch))
+#            log.info('iter resetting to: {:d}'.format(start_iter))
+#        else:
+#            start_epoch = 0
+#            start_iter = 0
+#
+#        avg_loss = float(package.get('avg_loss', 0))
+#
+#        loss_results, cer_results, wer_results = package['loss_results'], package['cer_results'], package['wer_results']
+#        if len(loss_results) < args.epochs:
+#            loss_results = torch.cat((loss_results, torch.Tensor(args.epochs - len(loss_results)).zero_()))
+#        if len(cer_results) < args.epochs:
+#            cer_results = torch.cat((cer_results, torch.Tensor(args.epochs - len(cer_results)).zero_()))
+#        if len(wer_results) < args.epochs:
+#            wer_results = torch.cat((wer_results, torch.Tensor(args.epochs - len(wer_results)).zero_()))
+#
+#        if args.visdom and package['loss_results'] is not None and start_epoch > 0:  # Add previous scores to visdom graph
+#            x_axis = epochs[0:start_epoch]
+#            y_axis = torch.stack((loss_results[0:start_epoch], wer_results[0:start_epoch], cer_results[0:start_epoch]),
+#                                 dim=1)
+#            viz_window = viz.line(
+#                X=x_axis,
+#                Y=y_axis,
+#                opts=opts,
+#            )
+#        if args.tensorboard and package['loss_results'] is not None and start_epoch > 0:  # Previous scores to tensorboard logs
+#            for i in range(start_epoch):
+#                values = {
+#                    'Avg Train Loss': loss_results[i],
+#                    'Avg WER': wer_results[i],
+#                    'Avg CER': cer_results[i]
+#                }
+#                tensorboard_writer.add_scalars(args.id, values, i + 1)
+#        #if not args.no_shuffle and start_epoch != 0:
+#        #    print("Shuffling batches for the following epochs")
+#        #    train_sampler.shuffle()
+#    elif args.continue_from and args.finetune:
+#        log.info("Fine-tuning checkpoint model %s" % args.continue_from)
+#        package = torch.load(args.continue_from)
+#        model.load_state_dict(package['state_dict'])
+#        avg_loss = 0
+#        start_epoch = 0
+#        start_iter = 0
+#    else:
+#        avg_loss = 0
+#        start_epoch = 0
+#        start_iter = 0
+#
+#    decoder = GreedyDecoder(labels)
+#    train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest, labels=labels,
+#                                       normalize=True, augment=args.augment)
+#
+#    if args.sortagrad:
+#        train_sampler = BucketingSampler(train_dataset, batch_size=args.batch_size)
+#        train_loader = AudioDataLoader(train_dataset, batch_sampler=train_sampler,
+#                                       num_workers=args.num_workers, pin_memory=args.cuda)
+#    else:
+#        train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
+#                                       num_workers=args.num_workers, pin_memory=args.cuda)
+#        train_sampler = train_loader.batch_sampler
+#
+#    test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
+#                                      normalize=True, augment=False)
+#    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size, shuffle=True,
+#                                  num_workers=args.num_workers)
 
     if args.cuda:
         model = torch.nn.DataParallel(model).cuda()
@@ -374,12 +459,12 @@ def main():
         avg_loss /= len(train_sampler)
 
         log.info('Training Summary Epoch {0:03d}:  '
-                 'Average Loss {loss:8.4f}'.format((epoch + 1), loss=avg_loss))
+                 'Average Loss {loss:8.4f}'.format(epoch+1, loss=avg_loss))
 
         start_iter = 0  # Reset start iteration for next epoch, and change to full range of train_data
         total_cer, total_wer = 0, 0
         model.eval()
-        for i, (data) in enumerate(tqdm(test_loader)):  # test
+        for i, (data) in tqdm(enumerate(test_loader), total=len(test_loader)):
             inputs, targets, input_percentages, target_sizes = data
 
             inputs = Variable(inputs, volatile=True)
@@ -403,8 +488,9 @@ def main():
             target_strings = decoder.convert_to_strings(split_targets)
             wer, cer = 0, 0
             for x in range(len(target_strings)):
-                wer += decoder.wer(decoded_output[x], target_strings[x]) / float(len(target_strings[x].split()))
-                cer += decoder.cer(decoded_output[x], target_strings[x]) / float(len(target_strings[x]))
+                transcript, reference = decoded_output[x][0], target_strings[x][0]
+                wer += decoder.wer(transcript, reference) / float(len(reference.split()))
+                cer += decoder.cer(transcript, reference) / float(len(reference))
             total_cer += cer
             total_wer += wer
 
@@ -423,8 +509,8 @@ def main():
                  'Average CER {cer:7.3f}  '.format((epoch + 1), wer=wer, cer=cer))
 
         if args.visdom:
-            x_axis = epochs[0:epoch + 1]
-            y_axis = torch.stack((loss_results[0:epoch + 1], wer_results[0:epoch + 1], cer_results[0:epoch + 1]), dim=1)
+            x_axis = epochs[0:epoch+1]
+            y_axis = torch.stack((loss_results[0:epoch+1], wer_results[0:epoch+1], cer_results[0:epoch+1]), dim=1)
             if viz_window is None:
                 viz_window = viz.line(
                     X=x_axis,
@@ -444,20 +530,20 @@ def main():
                 'Avg WER': wer,
                 'Avg CER': cer
             }
-            tensorboard_writer.add_scalars(args.id, values, epoch + 1)
+            tensorboard_writer.add_scalars(args.id, values, epoch+1)
             if args.log_params:
                 for tag, value in model.named_parameters():
                     tag = tag.replace('.', '/')
-                    tensorboard_writer.add_histogram(tag, to_np(value), epoch + 1)
-                    tensorboard_writer.add_histogram(tag + '/grad', to_np(value.grad), epoch + 1)
+                    tensorboard_writer.add_histogram(tag, to_np(value), epoch+1)
+                    tensorboard_writer.add_histogram(tag + '/grad', to_np(value.grad), epoch+1)
         if args.checkpoint:
-            file_path = '%s/deepspeech_%03d.pth.tar' % (save_folder, epoch + 1)
+            file_path = '%s/deepspeech_%03d.pth.tar' % (save_folder, epoch+1)
             log.info("Saving checkpoint model to %s" % file_path)
             torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
                                             wer_results=wer_results, cer_results=cer_results),
                        file_path)
         # anneal lr
-        if args.optim != "yellowfin":
+        if args.optim != "yellowfin" and args.optim != "adam":
             optim_state = optimizer.state_dict()
             optim_state['param_groups'][0]['lr'] = optim_state['param_groups'][0]['lr'] / args.learning_anneal
             optimizer.load_state_dict(optim_state)
@@ -465,18 +551,14 @@ def main():
 
         if best_wer is None or best_wer > wer:
             log.info("Found better validated model, saving to %s" % args.model_path)
-            torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
-                                            wer_results=wer_results, cer_results=cer_results),
+            torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch,
+                                            loss_results=loss_results,
+                                            wer_results=wer_results,
+                                            cer_results=cer_results),
                        args.model_path)
             best_wer = wer
 
         avg_loss = 0
-
-        if args.sortagrad:
+        if not args.no_shuffle:
             print("Shuffling batches...")
             train_sampler.shuffle()
-
-
-if __name__ == '__main__':
-    main()
-
