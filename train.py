@@ -96,14 +96,12 @@ class AverageMeter(object):
     def reset(self):
         self.val = 0
         self.avg = 0
-        self.sum = 0
         self.count = 0
 
     def update(self, val, n=1):
         self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
+        self.count += 1
+        self.avg += (val - self.avg) / self.count
 
 
 def main():
@@ -183,7 +181,7 @@ def main():
 
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
                                       normalize=True, augment=False)
-    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size,
+    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size, shuffle=True,
                                   num_workers=args.num_workers)
 
     rnn_type = args.rnn_type.lower()

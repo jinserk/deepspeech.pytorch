@@ -1,6 +1,7 @@
 #!/bin/bash
 
-model="models/20171101_train10/deepspeech_checkpoint_epoch_002_iter_130000.pth.tar"
+#model="models/20171127_train10_swb/deepspeech_checkpoint_epoch_001_iter_010000.pth.tar"
+model="models/20171127_train10_swb/deepspeech_001.pth.tar"
 decoder="greedy"
 cuda="no"
 lm_path="lm/cantab/lm.binary"
