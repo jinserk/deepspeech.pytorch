@@ -113,8 +113,7 @@ class SpectrogramParser(AudioParser):
         win_length = n_fft
         hop_length = int(self.sample_rate * self.window_stride)
         # STFT
-        D = librosa.stft(y, n_fft=n_fft, hop_length=hop_length,
-                         win_length=win_length, window=self.window)
+        D = librosa.stft(y, n_fft=n_fft, hop_length=hop_length, win_length=win_length, window=self.window)
         spect, phase = librosa.magphase(D)
         # S = log(S+1)
         spect = np.log1p(spect)
@@ -124,8 +123,9 @@ class SpectrogramParser(AudioParser):
             std = spect.std()
             spect.add_(-mean)
             spect.div_(std)
-
-        return spect
+        phase = torch.FloatTensor(np.angle(phase))
+        data = torch.cat((torch.unsqueeze(spect, 0), torch.unsqueeze(phase, 0)), 0)
+        return data
 
     def parse_transcript(self, transcript_path):
         raise NotImplementedError
@@ -173,13 +173,13 @@ class SpectrogramDataset(Dataset, SpectrogramParser):
 
 def _collate_fn(batch):
     def func(p):
-        return p[0].size(1)
+        return p[0].size(2)
 
     longest_sample = max(batch, key=func)[0]
-    freq_size = longest_sample.size(0)
+    freq_size = longest_sample.size(1)
     minibatch_size = len(batch)
-    max_seqlength = longest_sample.size(1)
-    inputs = torch.zeros(minibatch_size, 1, freq_size, max_seqlength)
+    max_seqlength = longest_sample.size(2)
+    inputs = torch.zeros(minibatch_size, 2, freq_size, max_seqlength)
     input_percentages = torch.FloatTensor(minibatch_size)
     target_sizes = torch.IntTensor(minibatch_size)
     targets = []
@@ -187,8 +187,8 @@ def _collate_fn(batch):
         sample = batch[x]
         tensor = sample[0]
         target = sample[1]
-        seq_length = tensor.size(1)
-        inputs[x][0].narrow(1, 0, seq_length).copy_(tensor)
+        seq_length = tensor.size(2)
+        inputs[x].narrow(2, 0, seq_length).copy_(tensor)
         input_percentages[x] = seq_length / float(max_seqlength)
         target_sizes[x] = len(target)
         targets.extend(target)

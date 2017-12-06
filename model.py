@@ -43,7 +43,7 @@ class InferenceBatchSoftmax(nn.Module):
     def forward(self, input_):
         if not self.training:
             batch_size = input_.size()[0]
-            return torch.stack([F.softmax(input_[i]) for i in range(batch_size)], 0)
+            return torch.stack([F.softmax(input_[i], dim=1) for i in range(batch_size)], 0)
         else:
             return input_
 
@@ -161,7 +161,7 @@ class DeepSpeech(nn.Module):
         num_classes = len(self._labels)
 
         self.conv = nn.Sequential(
-            nn.Conv2d(1, 32, kernel_size=(41, 11), stride=(2, 2), padding=(0, 10)),
+            nn.Conv2d(2, 32, kernel_size=(41, 11), stride=(2, 2), padding=(0, 10)),
             nn.BatchNorm2d(32),
             #nn.Hardtanh(0, 20, inplace=True),
             Swish(),

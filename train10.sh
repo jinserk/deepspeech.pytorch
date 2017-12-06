@@ -1,11 +1,11 @@
 #!/bin/bash
 
-store_path="models/20171127_train10_swb"
-#continue_from="models/20171127_train10/deepspeech_checkpoint_epoch_003_iter_110000.pth.tar"
+store_path="models/20171128_train10_all"
+continue_from="models/20171128_train10_all/deepspeech_checkpoint_epoch_006_iter_040000.pth.tar"
 
 cmd="python train.py \
-	--train_manifest data/swb/swb-train.csv \
-	--val data/swb/swb-dev.csv \
+	--train_manifest data/manifests/train10.csv \
+	--val data/manifests/val10.csv \
 	--sample_rate 8000 \
 	--augment \
 	--num_workers 4 \

@@ -27,6 +27,8 @@ beam_args.add_argument('--top_paths', default=1, type=int, help='number of beams
 beam_args.add_argument('--beam_width', default=10, type=int, help='Beam width to use')
 beam_args.add_argument('--lm_path', default=None, type=str,
                        help='Path to an (optional) kenlm language model for use with beam search (req\'d with trie)')
+beam_args.add_argument('--dict_path', default=None, type=str,
+                        help='Path to an (optional) trie dictionary for use with beam search (req\'d with LM)')
 beam_args.add_argument('--alpha', default=0.8, type=float, help='Language model weight')
 beam_args.add_argument('--beta', default=1, type=float, help='Language model word bonus (all words)')
 beam_args.add_argument('--cutoff_top_n', default=40, type=int,
@@ -116,7 +118,7 @@ if __name__ == '__main__':
     parser = SpectrogramParser(audio_conf, normalize=True)
 
     spect = parser.parse_audio(args.audio_path).contiguous()
-    spect = spect.view(1, 1, spect.size(0), spect.size(1))
+    spect = spect.view(1, spect.size(0), spect.size(1), spect.size(2))
     out = model(Variable(spect, volatile=True))
     out = out.transpose(0, 1)  # TxNxH
 

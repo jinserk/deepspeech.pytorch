@@ -67,8 +67,8 @@ parser.add_argument('--noise_min', default=0.0,
                     help='Minimum noise level to sample from. (1.0 means all noise, not original signal)', type=float)
 parser.add_argument('--noise_max', default=0.5,
                     help='Maximum noise levels to sample from. Maximum 1.0', type=float)
-#parser.add_argument('--sortagrad', dest='sortagrad', action='store_true',
-#                    help='Turn off sampling from dataset based on sequence length (smallest to largest)')
+parser.add_argument('--sortagrad', dest='sortagrad', action='store_true',
+                    help='Turn off sampling from dataset based on sequence length (smallest to largest)')
 parser.add_argument('--no_shuffle', dest='no_shuffle', action='store_true',
                     help='Turn off shuffling and sample from dataset based on sequence length (smallest to largest)')
 parser.add_argument('--no_bidirectional', dest='bidirectional', action='store_false', default=True,
@@ -104,6 +104,24 @@ class AverageMeter(object):
         self.val = val
         self.count += 1
         self.avg += (val - self.avg) / self.count
+
+
+def get_optimizer(parameters, args):
+    if args.optim == "rmsprop":
+        log.info(f"optimization: RMSprop (lr={args.lr}, alpha={args.alpha}, eps={args.epsilon}, weight_decay=0, mementum=0, centered=False)")
+        optimizer = torch.optim.RMSprop(parameters, lr=args.lr, alpha=args.alpha, eps=args.epsilon, weight_decay=0, momentum=0, centered=False)
+    elif args.optim == "adam":
+        log.info(f"optimization: Adam (lr={args.lr}, betas=({args.beta1}, {args.beta2}), eps={args.epsilon}, weight_decay=0)")
+        optimizer = torch.optim.Adam(parameters, lr=args.lr, betas=(args.beta1, args.beta2), eps=args.epsilon, weight_decay=0)
+        args.learning_anneal = 1.
+    elif args.optim == "yellowfin":
+        log.info(f"optimization: YFOptimizer (lr={args.lr}, mu=0.0)")
+        optimizer = YFOptimizer(parameters, lr=args.lr, mu=0.0)
+        args.learning_anneal = 1.
+    else:  # args.optim == "sgd":
+        log.info(f"optimization: SGD (lr={args.lr}, momentum={args.momentum}, nestrov=True)")
+        optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
+    return optimizer
 
 
 if __name__ == '__main__':
@@ -168,9 +186,15 @@ if __name__ == '__main__':
         labels = DeepSpeech.get_labels(model)
         audio_conf = DeepSpeech.get_audio_conf(model)
         parameters = model.parameters()
-        optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
+        #optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
+        optimizer = get_optimizer(parameters, args)
         if not args.finetune:  # Don't want to restart training
             optimizer.load_state_dict(package['optim_dict'])
+            if args.cuda:
+                for state in optimizer.state.values():
+                    for k, v in state.items():
+                        if torch.is_tensor(v):
+                            state[k] = v.cuda()
             start_epoch = int(package.get('epoch', 1)) - 1  # Index start at 0 for training
             start_iter = package.get('iteration', None)
             if start_iter is None:
@@ -181,6 +205,13 @@ if __name__ == '__main__':
             avg_loss = int(package.get('avg_loss', 0))
             loss_results, cer_results, wer_results = package['loss_results'], package[
                 'cer_results'], package['wer_results']
+            if len(loss_results) < args.epochs:
+                loss_results = torch.cat((loss_results, torch.Tensor(args.epochs - len(loss_results)).zero_()))
+            if len(cer_results) < args.epochs:
+                cer_results = torch.cat((cer_results, torch.Tensor(args.epochs - len(cer_results)).zero_()))
+            if len(wer_results) < args.epochs:
+                wer_results = torch.cat((wer_results, torch.Tensor(args.epochs - len(wer_results)).zero_()))
+
             if args.visdom and \
                             package[
                                 'loss_results'] is not None and start_epoch > 0:  # Add previous scores to visdom graph
@@ -222,149 +253,30 @@ if __name__ == '__main__':
                            audio_conf=audio_conf,
                            bidirectional=args.bidirectional)
         parameters = model.parameters()
-        optimizer = torch.optim.SGD(parameters, lr=args.lr,
-                                    momentum=args.momentum, nesterov=True)
+        #optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
+        optimizer = get_optimizer(parameters, args)
 
     decoder = GreedyDecoder(labels)
     train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest, labels=labels,
                                        normalize=True, augment=args.augment)
+    #train_sampler = BucketingSampler(train_dataset, batch_size=args.batch_size)
+    #train_loader = AudioDataLoader(train_dataset, num_workers=args.num_workers, batch_sampler=train_sampler)
+    if args.sortagrad:
+        train_sampler = BucketingSampler(train_dataset, batch_size=args.batch_size)
+        train_loader = AudioDataLoader(train_dataset, batch_sampler=train_sampler,
+                                       num_workers=args.num_workers, pin_memory=args.cuda)
+    else:
+        train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
+                                       num_workers=args.num_workers, pin_memory=args.cuda)
+        train_sampler = train_loader.batch_sampler
+
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
                                       normalize=True, augment=False)
-    train_sampler = BucketingSampler(train_dataset, batch_size=args.batch_size)
-    train_loader = AudioDataLoader(train_dataset,
-                                   num_workers=args.num_workers, batch_sampler=train_sampler)
-    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size,
-                                  num_workers=args.num_workers)
+    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
 
-    if not args.no_shuffle and start_epoch != 0:
+    if args.sortagrad and not args.no_shuffle and start_epoch != 0:
         log.info("Shuffling batches for the following epochs")
         train_sampler.shuffle()
-
-#    with open(args.labels_path) as label_file:
-#        labels = str(''.join(json.load(label_file)))
-#
-#    audio_conf = dict(sample_rate=args.sample_rate,
-#                      window_size=args.window_size,
-#                      window_stride=args.window_stride,
-#                      window=args.window,
-#                      noise_dir=args.noise_dir,
-#                      noise_prob=args.noise_prob,
-#                      noise_levels=(args.noise_min, args.noise_max))
-#
-#    rnn_type = args.rnn_type.lower()
-#    assert rnn_type in supported_rnns, "rnn_type should be either lstm, rnn or gru"
-#
-#    model = DeepSpeech(rnn_hidden_size=args.hidden_size,
-#                       nb_layers=args.hidden_layers,
-#                       labels=labels,
-#                       rnn_type=supported_rnns[rnn_type],
-#                       audio_conf=audio_conf,
-#                       bidirectional=True)
-#
-#    parameters = model.parameters()
-#
-#    if args.optim == "rmsprop":
-#        log.info(f"optimization: RMSprop (lr={args.lr}, alpha={args.alpha}, eps={args.epsilon}, weight_decay=0, mementum=0, centered=False)")
-#        optimizer = torch.optim.RMSprop(parameters, lr=args.lr, alpha=args.alpha, eps=args.epsilon, weight_decay=0, momentum=0, centered=False)
-#    elif args.optim == "adam":
-#        log.info(f"optimization: Adam (lr={args.lr}, betas=({args.beta1}, {args.beta2}), eps={args.epsilon}, weight_decay=0)")
-#        optimizer = torch.optim.Adam(parameters, lr=args.lr, betas=(args.beta1, args.beta2), eps=args.epsilon, weight_decay=0)
-#        args.learning_anneal = 1.
-#    elif args.optim == "yellowfin":
-#        log.info(f"optimization: YFOptimizer (lr={args.lr}, mu=0.0)")
-#        optimizer = YFOptimizer(parameters, lr=args.lr, mu=0.0)
-#        args.learning_anneal = 1.
-#    else:  # args.optim == "sgd":
-#        log.info(f"optimization: SGD (lr={args.lr}, momentum={args.momentum}, nestrov=True)")
-#        optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
-#
-#    decoder = GreedyDecoder(labels)
-#
-#    if args.continue_from and not args.finetune:
-#        log.info("Loading checkpoint model %s" % args.continue_from)
-#        package = torch.load(args.continue_from)
-#        model.load_state_dict(package['state_dict'])
-#        if not args.optim_restart:
-#            #optimizer.load_state_dict(package['optim_dict'])
-#            # replace lr
-#            optim_state = package['optim_dict']
-#            #optim_state['param_groups'][0]['lr'] = args.lr / (args.learning_anneal ** 10)
-#            optimizer.load_state_dict(optim_state)
-#
-#            start_epoch = int(package.get('epoch', 1)) - 1  # Python index start at 0 for training
-#            start_iter = package.get('iteration', None)
-#            if start_iter is None:
-#                start_epoch += 1  # Assume that we saved a model after an epoch finished, so start at the next epoch.
-#                start_iter = 0
-#            else:
-#                start_iter += 1
-#
-#            log.info('Learning rate resetting to: {lr:.6f}'.format(lr=optim_state['param_groups'][0]['lr']))
-#            log.info('Epoch resetting to: {:d}'.format(start_epoch))
-#            log.info('iter resetting to: {:d}'.format(start_iter))
-#        else:
-#            start_epoch = 0
-#            start_iter = 0
-#
-#        avg_loss = float(package.get('avg_loss', 0))
-#
-#        loss_results, cer_results, wer_results = package['loss_results'], package['cer_results'], package['wer_results']
-#        if len(loss_results) < args.epochs:
-#            loss_results = torch.cat((loss_results, torch.Tensor(args.epochs - len(loss_results)).zero_()))
-#        if len(cer_results) < args.epochs:
-#            cer_results = torch.cat((cer_results, torch.Tensor(args.epochs - len(cer_results)).zero_()))
-#        if len(wer_results) < args.epochs:
-#            wer_results = torch.cat((wer_results, torch.Tensor(args.epochs - len(wer_results)).zero_()))
-#
-#        if args.visdom and package['loss_results'] is not None and start_epoch > 0:  # Add previous scores to visdom graph
-#            x_axis = epochs[0:start_epoch]
-#            y_axis = torch.stack((loss_results[0:start_epoch], wer_results[0:start_epoch], cer_results[0:start_epoch]),
-#                                 dim=1)
-#            viz_window = viz.line(
-#                X=x_axis,
-#                Y=y_axis,
-#                opts=opts,
-#            )
-#        if args.tensorboard and package['loss_results'] is not None and start_epoch > 0:  # Previous scores to tensorboard logs
-#            for i in range(start_epoch):
-#                values = {
-#                    'Avg Train Loss': loss_results[i],
-#                    'Avg WER': wer_results[i],
-#                    'Avg CER': cer_results[i]
-#                }
-#                tensorboard_writer.add_scalars(args.id, values, i + 1)
-#        #if not args.no_shuffle and start_epoch != 0:
-#        #    print("Shuffling batches for the following epochs")
-#        #    train_sampler.shuffle()
-#    elif args.continue_from and args.finetune:
-#        log.info("Fine-tuning checkpoint model %s" % args.continue_from)
-#        package = torch.load(args.continue_from)
-#        model.load_state_dict(package['state_dict'])
-#        avg_loss = 0
-#        start_epoch = 0
-#        start_iter = 0
-#    else:
-#        avg_loss = 0
-#        start_epoch = 0
-#        start_iter = 0
-#
-#    decoder = GreedyDecoder(labels)
-#    train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest, labels=labels,
-#                                       normalize=True, augment=args.augment)
-#
-#    if args.sortagrad:
-#        train_sampler = BucketingSampler(train_dataset, batch_size=args.batch_size)
-#        train_loader = AudioDataLoader(train_dataset, batch_sampler=train_sampler,
-#                                       num_workers=args.num_workers, pin_memory=args.cuda)
-#    else:
-#        train_loader = AudioDataLoader(train_dataset, batch_size=args.batch_size, shuffle=True,
-#                                       num_workers=args.num_workers, pin_memory=args.cuda)
-#        train_sampler = train_loader.batch_sampler
-#
-#    test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
-#                                      normalize=True, augment=False)
-#    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size, shuffle=True,
-#                                  num_workers=args.num_workers)
 
     if args.cuda:
         model = torch.nn.DataParallel(model).cuda()
@@ -536,12 +448,14 @@ if __name__ == '__main__':
                     tag = tag.replace('.', '/')
                     tensorboard_writer.add_histogram(tag, to_np(value), epoch+1)
                     tensorboard_writer.add_histogram(tag + '/grad', to_np(value.grad), epoch+1)
+
         if args.checkpoint:
             file_path = '%s/deepspeech_%03d.pth.tar' % (save_folder, epoch+1)
             log.info("Saving checkpoint model to %s" % file_path)
             torch.save(DeepSpeech.serialize(model, optimizer=optimizer, epoch=epoch, loss_results=loss_results,
                                             wer_results=wer_results, cer_results=cer_results),
                        file_path)
+
         # anneal lr
         if args.optim != "yellowfin" and args.optim != "adam":
             optim_state = optimizer.state_dict()
@@ -559,6 +473,6 @@ if __name__ == '__main__':
             best_wer = wer
 
         avg_loss = 0
-        if not args.no_shuffle:
+        if args.sortagrad and not args.no_shuffle:
             print("Shuffling batches...")
             train_sampler.shuffle()

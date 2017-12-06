@@ -1,7 +1,7 @@
 #!/bin/bash
 
-#model="models/20171127_train10_swb/deepspeech_checkpoint_epoch_001_iter_010000.pth.tar"
-model="models/20171127_train10_swb/deepspeech_001.pth.tar"
+model="models/20171128_train10_all/deepspeech_checkpoint_epoch_006_iter_040000.pth.tar"
+#model="models/20171128_train10_all/deepspeech_003.pth.tar"
 decoder="greedy"
 cuda="no"
 lm_path="lm/cantab/lm.binary"
@@ -16,12 +16,9 @@ if [ "$decoder" == "beam" ]; then
 	python transcribe.py \
 		--model_path $model \
 		--decoder $decoder \
-		--beam_width 20 \
 		--lm_path $lm_path \
-		--trie_path $trie_path \
-		--lm_alpha 0.8 \
-		--lm_beta1 1.0 \
-		--lm_beta2 1.0 \
+		--dict_path $trie_path \
+	  --lm_workers 30 \
 		$cuda_opt \
 		--audio_path $wav
 else
