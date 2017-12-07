@@ -17,6 +17,7 @@
 
 import Levenshtein as Lev
 import torch
+import numpy as np
 from six.moves import xrange
 
 
@@ -98,31 +99,37 @@ class BeamCTCDecoder(Decoder):
         self._decoder = CTCBeamDecoder(labels, lm_path, alpha, beta, cutoff_top_n, cutoff_prob, beam_width,
                                        num_processes, blank_index)
 
-    def convert_to_strings(self, out, seq_len):
+    def convert_to_strings(self, out, seq_len, best=None):
         results = []
         for b, batch in enumerate(out):
             utterances = []
             for p, utt in enumerate(batch):
+                if best is not None and p != best[b]:
+                    continue
                 size = seq_len[b][p]
                 if size > 0:
                     transcript = ''.join(map(lambda x: self.int_to_char[x], utt[0:size]))
                 else:
                     transcript = ''
                 utterances.append(transcript)
-            results.append(utterances)
+            if utterances:
+                results.append(utterances)
         return results
 
-    def convert_tensor(self, offsets, sizes):
+    def convert_tensor(self, offsets, sizes, best=None):
         results = []
         for b, batch in enumerate(offsets):
             utterances = []
             for p, utt in enumerate(batch):
+                if best is not None and p != best[b]:
+                    continue
                 size = sizes[b][p]
                 if sizes[b][p] > 0:
                     utterances.append(utt[0:size])
                 else:
                     utterances.append(torch.IntTensor())
-            results.append(utterances)
+            if utterances:
+                results.append(utterances)
         return results
 
     def decode(self, probs, sizes=None):
@@ -138,8 +145,10 @@ class BeamCTCDecoder(Decoder):
         probs = probs.cpu().transpose(0, 1).contiguous()
         out, scores, offsets, seq_lens = self._decoder.decode(probs)
 
-        strings = self.convert_to_strings(out, seq_lens)
-        offsets = self.convert_tensor(offsets, seq_lens)
+        best = np.argmax(scores, axis=1)
+        #best = np.zeros(len(out))
+        strings = self.convert_to_strings(out, seq_lens, best)
+        offsets = self.convert_tensor(offsets, seq_lens, best)
         return strings, offsets
 
 
