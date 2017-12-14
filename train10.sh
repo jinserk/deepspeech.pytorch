@@ -1,18 +1,18 @@
 #!/bin/bash
 
-store_path="models/20171128_train10_all"
-continue_from="models/20171128_train10_all/deepspeech_checkpoint_epoch_006_iter_040000.pth.tar"
+store_path="models/20171212_train10_all"
+#continue_from="models/20171128_train10_all/deepspeech_checkpoint_epoch_006_iter_040000.pth.tar"
 
 cmd="python train.py \
 	--train_manifest data/manifests/train10.csv \
 	--val data/manifests/val10.csv \
 	--sample_rate 8000 \
 	--augment \
-	--num_workers 4 \
-	--batch_size 16 \
+	--num_workers 8 \
+	--batch_size 32 \
 	--rnn_type lstm \
 	--hidden_size 512 \
-	--hidden_layers 5 \
+	--hidden_layers 3 \
 	--epochs 100 \
 	--optim adam \
 	--lr 1e-4 \
