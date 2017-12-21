@@ -1,7 +1,7 @@
 #!/bin/bash
 
-store_path="models/20171212_train10_all"
-#continue_from="models/20171128_train10_all/deepspeech_checkpoint_epoch_006_iter_040000.pth.tar"
+store_path="models/20171220_train10_all"
+continue_from="models/20171220_train10_all/deepspeech_checkpoint_epoch_001_iter_050000.pth.tar"
 
 cmd="python train.py \
 	--train_manifest data/manifests/train10.csv \
@@ -12,7 +12,7 @@ cmd="python train.py \
 	--batch_size 32 \
 	--rnn_type lstm \
 	--hidden_size 512 \
-	--hidden_layers 3 \
+	--hidden_layers 4 \
 	--epochs 100 \
 	--optim adam \
 	--lr 1e-4 \

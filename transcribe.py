@@ -7,6 +7,7 @@ warnings.simplefilter('ignore')
 
 from decoder import GreedyDecoder
 
+import torch
 from torch.autograd import Variable
 
 from data.data_loader import SpectrogramParser
@@ -89,7 +90,9 @@ if __name__ == '__main__':
 
     spect = parser.parse_audio(args.audio_path).contiguous()
     spect = spect.view(1, spect.size(0), spect.size(1), spect.size(2))
-    out = model(Variable(spect, volatile=True))
-    out = out.transpose(0, 1)  # TxNxH
-    decoded_output, decoded_offsets = decoder.decode(out.data)
+    with torch.no_grad():
+        #out = model(Variable(spect, volatile=True))
+        out = model(Variable(spect))
+        out = out.transpose(0, 1)  # TxNxH
+        decoded_output, decoded_offsets = decoder.decode(out.data)
     print(json.dumps(decode_results(decoded_output, decoded_offsets)))

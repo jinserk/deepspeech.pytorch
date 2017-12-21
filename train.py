@@ -272,7 +272,7 @@ if __name__ == '__main__':
 
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
                                       normalize=True, augment=False)
-    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size, num_workers=args.num_workers)
+    test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
 
     if args.sortagrad and not args.no_shuffle and start_epoch != 0:
         log.info("Shuffling batches for the following epochs")
@@ -379,36 +379,39 @@ if __name__ == '__main__':
         for i, (data) in tqdm(enumerate(test_loader), total=len(test_loader)):
             inputs, targets, input_percentages, target_sizes = data
 
-            inputs = Variable(inputs, volatile=True)
+            #inputs = Variable(inputs, volatile=True)
+            inputs = Variable(inputs)
 
-            # unflatten targets
-            split_targets = []
-            offset = 0
-            for size in target_sizes:
-                split_targets.append(targets[offset:offset + size])
-                offset += size
+            with torch.no_grad():
+                # unflatten targets
+                split_targets = []
+                offset = 0
+                for size in target_sizes:
+                    split_targets.append(targets[offset:offset + size])
+                    offset += size
 
-            if args.cuda:
-                inputs = inputs.cuda(async=True)
+                if args.cuda:
+                    inputs = inputs.cuda(async=True)
 
-            out = model(inputs)
-            out = out.transpose(0, 1)  # TxNxH
-            seq_length = out.size(0)
-            sizes = input_percentages.mul_(int(seq_length)).int()
+                out = model(inputs)
+                out = out.transpose(0, 1)  # TxNxH
+                seq_length = out.size(0)
+                sizes = input_percentages.mul_(int(seq_length)).int()
 
-            decoded_output, _ = decoder.decode(out.data, sizes)
-            target_strings = decoder.convert_to_strings(split_targets)
-            wer, cer = 0, 0
-            for x in range(len(target_strings)):
-                transcript, reference = decoded_output[x][0], target_strings[x][0]
-                wer += decoder.wer(transcript, reference) / float(len(reference.split()))
-                cer += decoder.cer(transcript, reference) / float(len(reference))
-            total_cer += cer
-            total_wer += wer
+                decoded_output, _ = decoder.decode(out.data, sizes)
+                target_strings = decoder.convert_to_strings(split_targets)
+                wer, cer = 0, 0
+                for x in range(len(target_strings)):
+                    transcript, reference = decoded_output[x][0], target_strings[x][0]
+                    wer += decoder.wer(transcript, reference) / float(len(reference.split()))
+                    cer += decoder.cer(transcript, reference) / float(len(reference))
+                total_cer += cer
+                total_wer += wer
 
-            if args.cuda:
-                torch.cuda.synchronize()
-            del out
+                if args.cuda:
+                    torch.cuda.synchronize()
+                del out
+
         wer = total_wer / len(test_loader.dataset)
         cer = total_cer / len(test_loader.dataset)
         wer *= 100
