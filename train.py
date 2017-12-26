@@ -1,17 +1,18 @@
 import sys
 import argparse
 import errno
-import json
 import os
 import time
 import logging
 import signal
 
+import numpy as np
 import torch
 from tqdm import tqdm
 from torch.autograd import Variable
 from warpctc_pytorch import CTCLoss
 from data.data_loader import AudioDataLoader, SpectrogramDataset, BucketingSampler
+from data.labeler import CharLabeler, PhoneLabeler
 from decoder import GreedyDecoder
 from model import DeepSpeech, supported_rnns
 
@@ -26,7 +27,6 @@ parser.add_argument('--val_manifest', metavar='DIR',
 parser.add_argument('--sample_rate', default=8000, type=int, help='Sample rate')
 parser.add_argument('--batch_size', default=20, type=int, help='Batch size for training')
 parser.add_argument('--num_workers', default=4, type=int, help='Number of workers used in data-loading')
-parser.add_argument('--labels_path', default='labels.json', help='Contains all characters for transcription')
 parser.add_argument('--window_size', default=.02, type=float, help='Window size for spectrogram in seconds')
 parser.add_argument('--window_stride', default=.01, type=float, help='Window stride for spectrogram in seconds')
 parser.add_argument('--window', default='hamming', help='Window type for spectrogram generation')
@@ -35,6 +35,10 @@ parser.add_argument('--hidden_layers', default=5, type=int, help='Number of RNN 
 parser.add_argument('--rnn_type', default='lstm', help='Type of the RNN. rnn|gru|lstm are supported')
 parser.add_argument('--epochs', default=50, type=int, help='Number of training epochs')
 parser.add_argument('--cuda', dest='cuda', action='store_true', help='Use cuda to train model')
+parser.add_argument('--phone', dest='phone', action='store_true', help='Use phone labels instead of char labels')
+parser.add_argument('--label_file', default='./labels.json', help='path of lable units file')
+parser.add_argument('--dict_file', default="./graph/words.txt", help = "path of word dict file")
+parser.add_argument('--lexicon_file', default="./graph/phones/align_lexicon.int", help = "path of lexicon file")
 parser.add_argument('--optim', default='sgd', type=str, help='Optimization method')
 parser.add_argument('--optim_restart', dest='optim_restart', action='store_true', help='Optimization restart if continute_from exists')
 parser.add_argument('--lr', '--learning-rate', default=3e-4, type=float, help='initial learning rate')
@@ -233,8 +237,10 @@ if __name__ == '__main__':
                     }
                     tensorboard_writer.add_scalars(args.id, values, i + 1)
     else:
-        with open(args.labels_path) as label_file:
-            labels = str(''.join(json.load(label_file)))
+        if args.phone:
+            labeler = PhoneLabeler(label_file=args.label_file, dict_file=args.dict_file, lexicon_file=args.lexicon_file)
+        else:
+            labeler = CharLabeler(label_file=args.label_file)
 
         audio_conf = dict(sample_rate=args.sample_rate,
                           window_size=args.window_size,
@@ -248,7 +254,7 @@ if __name__ == '__main__':
         assert rnn_type in supported_rnns, "rnn_type should be either lstm, rnn or gru"
         model = DeepSpeech(rnn_hidden_size=args.hidden_size,
                            nb_layers=args.hidden_layers,
-                           labels=labels,
+                           labeler=labeler,
                            rnn_type=supported_rnns[rnn_type],
                            audio_conf=audio_conf,
                            bidirectional=args.bidirectional)
@@ -256,9 +262,9 @@ if __name__ == '__main__':
         #optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
         optimizer = get_optimizer(parameters, args)
 
-    decoder = GreedyDecoder(labels)
-    train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest, labels=labels,
-                                       normalize=True, augment=args.augment)
+    decoder = GreedyDecoder(labeler)
+    train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest,
+                                       labeler=labeler, normalize=True, augment=args.augment)
     #train_sampler = BucketingSampler(train_dataset, batch_size=args.batch_size)
     #train_loader = AudioDataLoader(train_dataset, num_workers=args.num_workers, batch_sampler=train_sampler)
     if args.sortagrad:
@@ -270,8 +276,8 @@ if __name__ == '__main__':
                                        num_workers=args.num_workers, pin_memory=args.cuda)
         train_sampler = train_loader.batch_sampler
 
-    test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest, labels=labels,
-                                      normalize=True, augment=False)
+    test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest,
+                                      labeler=labeler, normalize=True, augment=False)
     test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
 
     if args.sortagrad and not args.no_shuffle and start_epoch != 0:

@@ -11,6 +11,7 @@ import torchaudio
 from torch.utils.data import DataLoader
 from torch.utils.data import Dataset
 
+
 windows = {'hamming': scipy.signal.hamming, 'hann': scipy.signal.hann, 'blackman': scipy.signal.blackman,
            'bartlett': scipy.signal.bartlett}
 
@@ -132,7 +133,7 @@ class SpectrogramParser(AudioParser):
 
 
 class SpectrogramDataset(Dataset, SpectrogramParser):
-    def __init__(self, audio_conf, manifest_filepath, labels, normalize=False, augment=False):
+    def __init__(self, audio_conf, manifest_filepath, labeler, normalize=False, augment=False):
         """
         Dataset that loads tensors via a csv containing file paths to audio files and transcripts separated by
         a comma. Each new line is a different sample. Example below:
@@ -151,7 +152,7 @@ class SpectrogramDataset(Dataset, SpectrogramParser):
         ids = [x.strip().split(',') for x in ids]
         self.ids = ids
         self.size = len(ids)
-        self.labels_map = dict([(labels[i], i) for i in range(len(labels))])
+        self.labeler = labeler
         super(SpectrogramDataset, self).__init__(audio_conf, normalize, augment)
 
     def __getitem__(self, index):
@@ -164,8 +165,8 @@ class SpectrogramDataset(Dataset, SpectrogramParser):
     def parse_transcript(self, transcript_path):
         with open(transcript_path, 'r') as transcript_file:
             transcript = transcript_file.read().replace('\n', '')
-        transcript = list(filter(None, [self.labels_map.get(x) for x in list(transcript)]))
-        return transcript
+            labels = self.labeler.convert_trans_to_labels(transcript)
+        return labels
 
     def __len__(self):
         return self.size
