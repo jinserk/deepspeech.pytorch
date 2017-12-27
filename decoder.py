@@ -203,8 +203,8 @@ class GreedyDecoder(Decoder):
         phones = []
         offsets = []
         for i in range(size):
-            phone = self.int_to_char[sequence[i]]
-            if phone != self.int_to_char[self.blank_index]:
+            phone = sequence[i]
+            if phone != self.labeler.blank_index:
                 # if this phone is a repetition and remove_repetitions=true, then skip
                 if remove_repetitions and i != 0 and phone == self.int_to_char[sequence[i - 1]]:
                     pass

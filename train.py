@@ -410,7 +410,8 @@ if __name__ == '__main__':
                 for x in range(len(target_strings)):
                     transcript, reference = decoded_output[x][0], target_strings[x][0]
                     cer += decoder.cer(transcript, reference) / float(len(reference))
-                    wer += decoder.wer(transcript, reference) / float(len(reference.split()))
+                    if labeler.type == 'chr':
+                        wer += decoder.wer(transcript, reference) / float(len(reference.split()))
                 total_cer += cer
                 total_wer += wer
 
