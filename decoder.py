@@ -50,6 +50,8 @@ class Decoder(object):
             s1 (string): space-separated sentence
             s2 (string): space-separated sentence
         """
+        if self.labeler.type == 'phn':
+            return 0.
 
         # build mapping of words to integers
         b = set(s1.split() + s2.split())
@@ -70,8 +72,13 @@ class Decoder(object):
             s1 (string): space-separated sentence
             s2 (string): space-separated sentence
         """
-        s1, s2, = s1.replace(' ', ''), s2.replace(' ', '')
-        return Lev.distance(s1, s2)
+        if self.labeler.type == 'chr':
+            s1, s2, = s1.replace(' ', ''), s2.replace(' ', '')
+            return Lev.distance(s1, s2)
+        else:
+            c1 = [chr(c) for c in s1]
+            c2 = [chr(c) for c in s2]
+            return Lev.distance(''.join(c1), ''.join(c2))
 
     def decode(self, probs, sizes=None):
         """
@@ -163,7 +170,10 @@ class GreedyDecoder(Decoder):
         offsets = [] if return_offsets else None
         for x in xrange(len(sequences)):
             seq_len = sizes[x] if sizes is not None else len(sequences[x])
-            string, string_offsets = self.process_string(sequences[x], seq_len, remove_repetitions)
+            if self.labeler.type == 'chr':
+                string, string_offsets = self.process_string(sequences[x], seq_len, remove_repetitions)
+            else:
+                string, string_offsets = self.process_phone(sequences[x], seq_len, remove_repetitions)
             strings.append([string])  # We only return one path
             if return_offsets:
                 offsets.append([string_offsets])
@@ -188,6 +198,20 @@ class GreedyDecoder(Decoder):
                     string = string + char
                     offsets.append(i)
         return string, torch.IntTensor(offsets)
+
+    def process_phone(self, sequence, size, remove_repetitions=False):
+        phones = []
+        offsets = []
+        for i in range(size):
+            phone = self.int_to_char[sequence[i]]
+            if phone != self.int_to_char[self.blank_index]:
+                # if this phone is a repetition and remove_repetitions=true, then skip
+                if remove_repetitions and i != 0 and phone == self.int_to_char[sequence[i - 1]]:
+                    pass
+                else:
+                    phones.append(phone)
+                    offsets.append(i)
+        return torch.IntTensor(phones), torch.IntTensor(offsets)
 
     def decode(self, probs, sizes=None):
         """

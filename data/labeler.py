@@ -7,11 +7,17 @@ class Labeler(object):
     Basic labeler class
     """
 
-    def __init__(self):
-        self.blank_index = 0
-        self.type = None
-        self.labels = list()
-        self.label_map = dict()
+    def __init__(self, package=None):
+        if package is None:
+            self.type = None
+            self.blank_index = 0
+            self.labels = list()
+            self.label_map = dict()
+        else:
+            self.type = package['type']
+            self.blank_index = package['blank_index']
+            self.labels = package['labels']
+            self.label_map = package['label_map']
 
     def load_labels(self, label_file):
         raise NotImplementedError
@@ -19,14 +25,10 @@ class Labeler(object):
     def convert_trans_to_labels(self, text):
         raise NotImplementedError
 
-    def load_package(self, package):
-        self.type = package['type']
-        self.labels = package['labels']
-        self.label_map = package['label_map']
-
-    def store_package(self):
+    def serialize(self):
         return {
             'type': self.type,
+            'blank_index': self.blank_index,
             'labels': self.labels,
             'label_map': self.label_map,
         }
@@ -34,10 +36,11 @@ class Labeler(object):
 
 class CharLabeler(Labeler):
 
-    def __init__(self, label_file):
-        super(CharLabeler, self).__init__()
-        self.type = 'chr'
-        self.load_labels(label_file)
+    def __init__(self, package=None, label_file=None):
+        super().__init__(package)
+        if package is None:
+            self.type = 'chr'
+            self.load_labels(label_file)
 
     def load_labels(self, label_file):
         with open(label_file) as f: # assume json format
@@ -50,12 +53,16 @@ class CharLabeler(Labeler):
 
 class PhoneLabeler(Labeler):
 
-    def __init__(self, label_file, dict_file, lexicon_file):
-        super(PhoneLabeler, self).__init__()
-        self.type = 'phn'
-        self.load_labels(label_file)
-        self.load_dict(dict_file)
-        self.load_lexicon(lexicon_file)
+    def __init__(self, package=None, label_file=None, dict_file=None, lexicon_file=None):
+        super().__init__(package)
+        if package is None:
+            self.type = 'phn'
+            self.load_labels(label_file)
+            self.load_dict(dict_file)
+            self.load_lexicon(lexicon_file)
+        else:
+            self.word_map = package['word_map']
+            self.lexicon_map = package['lexicon_map']
 
     def load_labels(self, label_file):
         with open(label_file, "r") as f:
@@ -106,14 +113,13 @@ class PhoneLabeler(Labeler):
         self.word_map = package['word_map']
         self.lexicon_map = package['lexicon_map']
 
-    def store_package(self):
-        return {
-            'type': self.type,
-            'labels': self.labels,
-            'label_map': self.label_map,
+    def serialize(self):
+        ret = super().serialize()
+        ret.update({
             'word_map': self.word_map,
             'lexicon_map': self.lexicon_map,
-        }
+        })
+        return ret
 
 
 if __name__ == '__main__':

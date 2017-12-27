@@ -6,6 +6,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.nn.parameter import Parameter
 from torch.autograd import Variable
+from data.labeler import CharLabeler, PhoneLabeler
 
 supported_rnns = {
     'lstm': nn.LSTM,
@@ -221,8 +222,12 @@ class DeepSpeech(nn.Module):
     @classmethod
     def load_model(cls, path, cuda=False):
         package = torch.load(path, map_location=lambda storage, loc: storage)
+        if package['labeler']['type'] == 'chr':
+            labeler = CharLabeler(package=package['labeler'])
+        else:
+            labeler = PhoneLabeler(package=package['labeler'])
         model = cls(rnn_hidden_size=package['hidden_size'], nb_layers=package['hidden_layers'],
-                    labels=package['labels'], audio_conf=package['audio_conf'],
+                    labeler=labeler, audio_conf=package['audio_conf'],
                     rnn_type=supported_rnns[package['rnn_type']], bidirectional=package.get('bidirectional', True))
         # the blacklist parameters are params that were previous erroneously saved by the model
         # care should be taken in future versions that if batch_norm on the first rnn is required
@@ -241,8 +246,12 @@ class DeepSpeech(nn.Module):
 
     @classmethod
     def load_model_package(cls, package, cuda=False):
+        if package['labeler']['type'] == 'chr':
+            labeler = CharLabeler(package=package['labeler'])
+        else:
+            labeler = PhoneLabeler(package=package['labeler'])
         model = cls(rnn_hidden_size=package['hidden_size'], nb_layers=package['hidden_layers'],
-                    labels=package['labels'], audio_conf=package['audio_conf'],
+                    labeler=labeler, audio_conf=package['audio_conf'],
                     rnn_type=supported_rnns[package['rnn_type']], bidirectional=package.get('bidirectional', True))
         model.load_state_dict(package['state_dict'])
         if cuda:
@@ -260,7 +269,7 @@ class DeepSpeech(nn.Module):
             'hidden_layers': model._hidden_layers,
             'rnn_type': supported_rnns_inv.get(model._rnn_type, model._rnn_type.__name__.lower()),
             'audio_conf': model._audio_conf,
-            'labels': model._labels,
+            'labeler': model._labeler.serialize(),
             'state_dict': model.state_dict(),
             'bidirectional': model._bidirectional
         }
@@ -281,9 +290,9 @@ class DeepSpeech(nn.Module):
         return package
 
     @staticmethod
-    def get_labels(model):
+    def get_labeler(model):
         model_is_cuda = next(model.parameters()).is_cuda
-        return model.module._labels if model_is_cuda else model._labels
+        return model.module._labeler if model_is_cuda else model._labeler
 
     @staticmethod
     def get_param_size(model):
@@ -334,7 +343,7 @@ if __name__ == '__main__':
     print("  Classes:          ", len(model._labels))
     print("")
     print("Model Features")
-    print("  Labels:           ", model._labels)
+    print("  Labels:           ", model._labeler.labels)
     print("  Sample Rate:      ", model._audio_conf.get("sample_rate", "n/a"))
     print("  Window Type:      ", model._audio_conf.get("window", "n/a"))
     print("  Window Size:      ", model._audio_conf.get("window_size", "n/a"))

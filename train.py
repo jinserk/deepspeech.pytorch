@@ -187,7 +187,7 @@ if __name__ == '__main__':
         log.info("Loading checkpoint model %s" % args.continue_from)
         package = torch.load(args.continue_from, map_location=lambda storage, loc: storage)
         model = DeepSpeech.load_model_package(package)
-        labels = DeepSpeech.get_labels(model)
+        labeler = DeepSpeech.get_labeler(model)
         audio_conf = DeepSpeech.get_audio_conf(model)
         parameters = model.parameters()
         #optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
@@ -409,8 +409,8 @@ if __name__ == '__main__':
                 wer, cer = 0, 0
                 for x in range(len(target_strings)):
                     transcript, reference = decoded_output[x][0], target_strings[x][0]
-                    wer += decoder.wer(transcript, reference) / float(len(reference.split()))
                     cer += decoder.cer(transcript, reference) / float(len(reference))
+                    wer += decoder.wer(transcript, reference) / float(len(reference.split()))
                 total_cer += cer
                 total_wer += wer
 
@@ -418,13 +418,13 @@ if __name__ == '__main__':
                     torch.cuda.synchronize()
                 del out
 
-        wer = total_wer / len(test_loader.dataset)
         cer = total_cer / len(test_loader.dataset)
-        wer *= 100
+        wer = total_wer / len(test_loader.dataset)
         cer *= 100
+        wer *= 100
         loss_results[epoch] = avg_loss
-        wer_results[epoch] = wer
         cer_results[epoch] = cer
+        wer_results[epoch] = wer
         log.info('Validation Summary Epoch {0:03d}:  '
                  'Average WER {wer:7.3f}  '
                  'Average CER {cer:7.3f}  '.format((epoch + 1), wer=wer, cer=cer))
