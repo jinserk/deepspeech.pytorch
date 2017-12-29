@@ -5,7 +5,7 @@ import warnings
 
 warnings.simplefilter('ignore')
 
-from decoder import GreedyDecoder
+from decoder import BeamCTCDecoder, GreedyDecoder, LatticeDecoder
 
 import torch
 from torch.autograd import Variable
@@ -21,7 +21,7 @@ parser.add_argument('--model_path', default='models/deepspeech_final.pth.tar',
 parser.add_argument('--audio_path', default='audio.wav',
                     help='Audio file to predict on')
 parser.add_argument('--cuda', action="store_true", help='Use cuda to test model')
-parser.add_argument('--decoder', default="greedy", choices=["greedy", "beam"], type=str, help="Decoder to use")
+parser.add_argument('--decoder', default="greedy", choices=["greedy", "beam", "lattice"], type=str, help="Decoder to use")
 parser.add_argument('--offsets', dest='offsets', action='store_true', help='Returns time offset information')
 beam_args = parser.add_argument_group("Beam Decode Options", "Configurations options for the CTC Beam Search decoder")
 beam_args.add_argument('--top_paths', default=1, type=int, help='number of beams to return')
@@ -74,17 +74,21 @@ if __name__ == '__main__':
     model = DeepSpeech.load_model(args.model_path, cuda=args.cuda)
     model.eval()
 
-    labels = DeepSpeech.get_labels(model)
+    labeler = DeepSpeech.get_labeler(model)
     audio_conf = DeepSpeech.get_audio_conf(model)
 
-    if args.decoder == "beam":
-        from decoder import BeamCTCDecoder
+    if labeler.is_char() and args.decoder == "lattice":
+        print("lattice decoder supports only phone type labeler")
+        sys.exit(1)
 
-        decoder = BeamCTCDecoder(labels, lm_path=args.lm_path, alpha=args.alpha, beta=args.beta,
+    if args.decoder == "beam":
+        decoder = BeamCTCDecoder(labeler, lm_path=args.lm_path, alpha=args.alpha, beta=args.beta,
                                  cutoff_top_n=args.cutoff_top_n, cutoff_prob=args.cutoff_prob,
                                  beam_width=args.beam_width, num_processes=args.lm_workers)
-    else:
-        decoder = GreedyDecoder(labels, blank_index=labels.index('_'))
+    elif args.decoder == "greedy":
+        decoder = GreedyDecoder(labeler)
+    else: #lattice
+        decoder = LatticeDecoder(labeler)
 
     parser = SpectrogramParser(audio_conf, normalize=True)
 
@@ -94,5 +98,7 @@ if __name__ == '__main__':
         #out = model(Variable(spect, volatile=True))
         out = model(Variable(spect))
         out = out.transpose(0, 1)  # TxNxH
-        decoded_output, decoded_offsets = decoder.decode(out.data)
+
+    decoded_output, decoded_offsets = decoder.decode(out.data)
     print(json.dumps(decode_results(decoded_output, decoded_offsets)))
+

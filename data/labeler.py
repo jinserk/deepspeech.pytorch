@@ -1,6 +1,8 @@
 import sys
 import json
 import operator
+import numpy as np
+from tqdm import tqdm
 
 class Labeler(object):
     """
@@ -12,14 +14,26 @@ class Labeler(object):
             self.type = None
             self.blank_index = 0
             self.labels = list()
-            self.label_map = dict()
+            self.label2idx = dict()
+            self.idx2label = dict()
         else:
             self.type = package['type']
             self.blank_index = package['blank_index']
             self.labels = package['labels']
-            self.label_map = package['label_map']
+            if 'label_map' in package:
+                self.label2idx = package['label_map']
+                self.idx2label = dict([(v, k) for (k, v) in self.label2idx.items()])
+            else:
+                self.label2idx = package['label2idx']
+                self.idx2label = package['idx2label']
+
+    def is_char(self):
+        return True if self.type == 'chr' else False
 
     def load_labels(self, label_file):
+        raise NotImplementedError
+
+    def count_label_prior(self, trans_list):
         raise NotImplementedError
 
     def convert_trans_to_labels(self, text):
@@ -30,7 +44,8 @@ class Labeler(object):
             'type': self.type,
             'blank_index': self.blank_index,
             'labels': self.labels,
-            'label_map': self.label_map,
+            'label2idx': self.label2idx,
+            'idx2label': self.idx2label,
         }
 
 
@@ -45,10 +60,14 @@ class CharLabeler(Labeler):
     def load_labels(self, label_file):
         with open(label_file) as f: # assume json format
             self.labels = str(''.join(json.load(f)))
-        self.label_map = dict([(self.labels[i], i) for i in range(len(self.labels))])
+        self.label2idx = dict([(self.labels[i], i) for i in range(len(self.labels))])
+        self.idx2label = dict([(i, c) for (i, c) in enumerate(self.labels)])
+
+    def count_label_prior(self, trans_list):
+        pass
 
     def convert_trans_to_labels(self, text):
-        return list(filter(None, [self.label_map.get(x) for x in list(text)]))
+        return list(filter(None, [self.label2idx.get(x) for x in list(text)]))
 
 
 class PhoneLabeler(Labeler):
@@ -60,17 +79,27 @@ class PhoneLabeler(Labeler):
             self.load_labels(label_file)
             self.load_dict(dict_file)
             self.load_lexicon(lexicon_file)
+            self.label_counts = None
         else:
             self.word_map = package['word_map']
             self.lexicon_map = package['lexicon_map']
+            self.label_counts = package['label_counts']
 
     def load_labels(self, label_file):
+        self.label2idx['_'] = 0 # blank
+        self.labels = [0]
         with open(label_file, "r") as f:
             for line in f:
                 token = line.strip().split()
                 label_index = int(token[1])
-                self.label_map[token[0]] = label_index
+                if ('<' in token[0] and '>' in token[0]) or '#' in token[0]:
+                    continue
+                if label_index == 0:
+                    print("label index 0 is reserved for blank label, <blk> or \"_\"")
+                    sys.exit(1)
                 self.labels.append(label_index)
+                self.label2idx[token[0]] = label_index
+                self.idx2label[label_index] = token[0]
 
     def load_dict(self, dict_file):
         self.word_map = {}
@@ -92,15 +121,39 @@ class PhoneLabeler(Labeler):
                         raise IOError
                 self.lexicon_map[int(token[0])] = lex
 
-    def convert_trans_to_labels(self, text):
-        labels = []
+    def count_label_priors(self, trans_list):
+        if self.label_counts is not None:
+            print("warning: label_counts exists already")
+            return
+        self.label_counts = [0] * len(self.labels)
+        print("counting label priors from the manifest of transcripts")
+        for tf in tqdm(trans_list):
+            with open(tf, 'r') as tr:
+                transcript = tr.read().replace('\n', '')
+                labels = self.convert_trans_to_labels(transcript, blank=True)
+                for l in labels:
+                    self.label_counts[l] += 1
+        print(self.label_counts)
+
+    def get_label_priors(self, prior_scale=1., prior_cutoff=1e-10, blank_scale=1.):
+        priors = np.array(self.label_counts)
+        zidx = np.nonzero(priors == 0)
+        priors = np.array([prior_cutoff if c < prior_cutoff else c for c in priors])
+        priors[0] *= blank_scale
+        priors = np.log(priors / priors.sum()) * prior_scale
+        priors[zidx] = np.finfo('d').max / 2
+        return priors
+
+    def convert_trans_to_labels(self, text, blank=False):
+        labels = [self.blank_index] if blank else []
         for word in text.strip().split():
-            if word in self.word_map:
-                wid = self.word_map[word]
-            else: # oov
-                wid = self.word_map['<unk>']
+            wid = self.word_map[word] if word in self.word_map else self.word_map['<unk>']
             try:
-                labels.extend(self.lexicon_map[wid])
+                if blank:
+                    for c in self.lexicon_map[wid]:
+                        labels.extend([c, self.blank_index])
+                else:
+                    labels.extend(self.lexicon_map[wid])
             except:
                 print("words and lexicon files are not mismatched")
                 raise
@@ -109,15 +162,22 @@ class PhoneLabeler(Labeler):
     def load_package(self, package):
         self.type = package['type']
         self.labels = package['labels']
-        self.label_map = package['label_map']
+        if 'label_map' in package:
+            self.label2idx = package['label_map']
+            self.idx2label = dict([(v, k) for (k, v) in self.label2idx.items()])
+        else:
+            self.label2idx = package['label2idx']
+            self.idx2label = package['idx2label']
         self.word_map = package['word_map']
         self.lexicon_map = package['lexicon_map']
+        self.label_counts = package['label_counts']
 
     def serialize(self):
         ret = super().serialize()
         ret.update({
             'word_map': self.word_map,
             'lexicon_map': self.lexicon_map,
+            'label_counts': self.label_counts,
         })
         return ret
 
@@ -128,10 +188,10 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description='create labelings for AM')
     parser.add_argument('--input', help = "input text file that will be translated to labels")
     parser.add_argument('--output', help = "path to output labels")
-    parser.add_argument('--phone', dest='phone', action='store_true', help = "true if phone labels are used")
-    parser.add_argument('--label_file', default="../labels.json", help = "path of label units file")
-    parser.add_argument('--dict_file', default="../graph/words.txt", help = "path of word dict file")
-    parser.add_argument('--lexicon_file', default="../graph/phones/align_lexicon.int", help = "path of lexicon file")
+    parser.add_argument('--phone', dest='phone', default=True, action='store_true', help = "true if phone labels are used")
+    parser.add_argument('--label_file', default="../kaldi/graph/labels.txt", help = "path of label units file")
+    parser.add_argument('--dict_file', default="../kaldi/graph/words.txt", help = "path of word dict file")
+    parser.add_argument('--lexicon_file', default="../kaldi/graph/phones/align_lexicon.int", help = "path of lexicon file")
     parser.add_argument('--ignore_noises', default = False, action='store_true', help='ignore all noises e.g. [noise], [laughter], [vocalized-noise]')
 
     args = parser.parse_args()

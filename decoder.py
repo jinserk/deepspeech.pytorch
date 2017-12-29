@@ -19,7 +19,7 @@ import Levenshtein as Lev
 import torch
 import numpy as np
 from six.moves import xrange
-
+from kaldi.file_io import tmpWriteArk, writeScp
 
 class Decoder(object):
     """
@@ -50,7 +50,7 @@ class Decoder(object):
             s1 (string): space-separated sentence
             s2 (string): space-separated sentence
         """
-        if self.labeler.type == 'phn':
+        if not self.labeler.is_char():
             return 0.
 
         # build mapping of words to integers
@@ -72,7 +72,7 @@ class Decoder(object):
             s1 (string): space-separated sentence
             s2 (string): space-separated sentence
         """
-        if self.labeler.type == 'chr':
+        if self.labeler.is_char():
             s1, s2, = s1.replace(' ', ''), s2.replace(' ', '')
             return Lev.distance(s1, s2)
         else:
@@ -170,10 +170,7 @@ class GreedyDecoder(Decoder):
         offsets = [] if return_offsets else None
         for x in xrange(len(sequences)):
             seq_len = sizes[x] if sizes is not None else len(sequences[x])
-            if self.labeler.type == 'chr':
-                string, string_offsets = self.process_string(sequences[x], seq_len, remove_repetitions)
-            else:
-                string, string_offsets = self.process_phone(sequences[x], seq_len, remove_repetitions)
+            string, string_offsets = self.process_string(sequences[x], seq_len, remove_repetitions)
             strings.append([string])  # We only return one path
             if return_offsets:
                 offsets.append([string_offsets])
@@ -199,20 +196,6 @@ class GreedyDecoder(Decoder):
                     offsets.append(i)
         return string, torch.IntTensor(offsets)
 
-    def process_phone(self, sequence, size, remove_repetitions=False):
-        phones = []
-        offsets = []
-        for i in range(size):
-            phone = sequence[i]
-            if phone != self.labeler.blank_index:
-                # if this phone is a repetition and remove_repetitions=true, then skip
-                if remove_repetitions and i != 0 and phone == self.int_to_char[sequence[i - 1]]:
-                    pass
-                else:
-                    phones.append(phone)
-                    offsets.append(i)
-        return torch.IntTensor(phones), torch.IntTensor(offsets)
-
     def decode(self, probs, sizes=None):
         """
         Returns the argmax decoding given the probability matrix. Removes
@@ -229,3 +212,57 @@ class GreedyDecoder(Decoder):
         strings, offsets = self.convert_to_strings(max_probs.view(max_probs.size(0), max_probs.size(1)), sizes,
                                                    remove_repetitions=True, return_offsets=True)
         return strings, offsets
+
+
+class LatticeDecoder(Decoder):
+    def __init__(self, labeler):
+        super(LatticeDecoder, self).__init__(labeler)
+
+    def greedy_check(self, sequences, sizes=None, remove_repetitions=False, return_offsets=False):
+        phones_list = []
+        offsets_list = [] if return_offsets else None
+        for x in xrange(len(sequences)):
+            seq_len = sizes[x] if sizes is not None else len(sequences[x])
+            phones, offsets = self.process_phone(sequences[x], seq_len, remove_repetitions)
+            phones_list.append([phones])  # We only return one path
+            if return_offsets:
+                offsets_list.append([offsets])
+        if return_offsets:
+            return phones_list, offsets_list
+        else:
+            return phones_list
+
+    def process_phone(self, sequence, size, remove_repetitions=False):
+        phones = []
+        offsets = []
+        for i in range(size):
+            phone = sequence[i]
+            if phone != self.labeler.blank_index:
+                # if this phone is a repetition and remove_repetitions=true, then skip
+                if remove_repetitions and i != 0 and phone == sequence[i - 1]:
+                    pass
+                else:
+                    phones.append(self.labeler.idx2label[phone])
+                    offsets.append(i)
+        return phones, torch.IntTensor(offsets)
+
+    def write_to_file(self, probs):
+        priors = self.labeler.get_label_priors()
+        feat = probs.log_().numpy() # log of probabilities
+        feat -= priors() # scaled likelihood
+        uttids = [f"utt{i:04d}" for i in range(len(feat))]
+        ark_name, ptrs = tmpWriteArk(feat, uttids)
+        scp_name = ark_name.replace(".ark", ".scp")
+        writeScp(scp_name, uttids, ptrs)
+        print(f"AM results has been written to {ark_name} and {scp_name}")
+
+    def decode(self, probs, sizes=None):
+        _, max_probs = torch.max(probs.transpose(0, 1), 2)
+        phones, offsets = self.greedy_check(max_probs.view(max_probs.size(0), max_probs.size(1)), sizes,
+                                            remove_repetitions=True, return_offsets=True)
+        print(' '.join(phones[0][0]))
+        self.write_to_file(probs.cpu().transpose(0, 1).contiguous())
+
+        #return strings, offsets
+
+

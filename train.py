@@ -37,8 +37,8 @@ parser.add_argument('--epochs', default=50, type=int, help='Number of training e
 parser.add_argument('--cuda', dest='cuda', action='store_true', help='Use cuda to train model')
 parser.add_argument('--phone', dest='phone', action='store_true', help='Use phone labels instead of char labels')
 parser.add_argument('--label_file', default='./labels.json', help='path of lable units file')
-parser.add_argument('--dict_file', default="./graph/words.txt", help = "path of word dict file")
-parser.add_argument('--lexicon_file', default="./graph/phones/align_lexicon.int", help = "path of lexicon file")
+parser.add_argument('--dict_file', default="./kaldi/graph/words.txt", help = "path of word dict file")
+parser.add_argument('--lexicon_file', default="./kaldi/graph/align_lexicon.int", help = "path of lexicon file")
 parser.add_argument('--optim', default='sgd', type=str, help='Optimization method')
 parser.add_argument('--optim_restart', dest='optim_restart', action='store_true', help='Optimization restart if continute_from exists')
 parser.add_argument('--lr', '--learning-rate', default=3e-4, type=float, help='initial learning rate')
@@ -97,9 +97,6 @@ class AverageMeter(object):
     """Computes and stores the average and current value"""
 
     def __init__(self):
-        self.reset()
-
-    def reset(self):
         self.val = 0
         self.avg = 0
         self.count = 0
@@ -264,7 +261,7 @@ if __name__ == '__main__':
 
     decoder = GreedyDecoder(labeler)
     train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest,
-                                       labeler=labeler, normalize=True, augment=args.augment)
+                                       labeler=labeler, count_label=True, normalize=True, augment=args.augment)
     #train_sampler = BucketingSampler(train_dataset, batch_size=args.batch_size)
     #train_loader = AudioDataLoader(train_dataset, num_workers=args.num_workers, batch_sampler=train_sampler)
     if args.sortagrad:
@@ -277,7 +274,7 @@ if __name__ == '__main__':
         train_sampler = train_loader.batch_sampler
 
     test_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.val_manifest,
-                                      labeler=labeler, normalize=True, augment=False)
+                                      labeler=labeler, count_label=False, normalize=True, augment=False)
     test_loader = AudioDataLoader(test_dataset, batch_size=args.batch_size, shuffle=True, num_workers=args.num_workers)
 
     if args.sortagrad and not args.no_shuffle and start_epoch != 0:
@@ -410,7 +407,7 @@ if __name__ == '__main__':
                 for x in range(len(target_strings)):
                     transcript, reference = decoded_output[x][0], target_strings[x][0]
                     cer += decoder.cer(transcript, reference) / float(len(reference))
-                    if labeler.type == 'chr':
+                    if labeler.is_char():
                         wer += decoder.wer(transcript, reference) / float(len(reference.split()))
                 total_cer += cer
                 total_wer += wer

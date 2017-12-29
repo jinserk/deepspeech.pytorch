@@ -1,7 +1,7 @@
 #!/bin/bash
 
-store_path="models/20171226_train10_phn"
-continue_from="models/20171226_train10_phn/deepspeech_checkpoint_epoch_001_iter_050000.pth.tar"
+store_path="models/20171229_train10_phn"
+#continue_from="models/20171226_train10_phn/deepspeech_checkpoint_epoch_001_iter_050000.pth.tar"
 #continue_from="models/20171220_train10_all/deepspeech_001.pth.tar"
 
 cmd="python train.py \
@@ -19,7 +19,7 @@ cmd="python train.py \
 	--lr 1e-4 \
 	--cuda \
 	--phone \
-	--label_file graph/phones.txt \
+	--label_file kaldi/graph/labels.txt \
 	--tensorboard \
 	--log_dir $store_path/tensorboard \
 	--checkpoint \

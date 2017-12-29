@@ -1,8 +1,8 @@
 #!/bin/bash
 
-model="models/20171220_train10_all/deepspeech_checkpoint_epoch_001_iter_050000.pth.tar"
-#model="models/20171212_train10_all/deepspeech_010.pth.tar"
-decoder="greedy"
+model="models/20171226_train10_phn/deepspeech_checkpoint_epoch_002_iter_010000.pth.tar"
+#model="models/20171228_train10_phn/deepspeech_001.pth.tar"
+decoder="lattice"
 cuda="no"
 lm_path="lm/cantab/lm.binary"
 trie_path="lm/cantab/lm.trie"

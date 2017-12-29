@@ -133,7 +133,7 @@ class SpectrogramParser(AudioParser):
 
 
 class SpectrogramDataset(Dataset, SpectrogramParser):
-    def __init__(self, audio_conf, manifest_filepath, labeler, normalize=False, augment=False):
+    def __init__(self, audio_conf, manifest_filepath, labeler, count_label=False, normalize=False, augment=False):
         """
         Dataset that loads tensors via a csv containing file paths to audio files and transcripts separated by
         a comma. Each new line is a different sample. Example below:
@@ -153,6 +153,8 @@ class SpectrogramDataset(Dataset, SpectrogramParser):
         self.ids = ids
         self.size = len(ids)
         self.labeler = labeler
+        if count_label:
+            self.labeler.count_label_priors([x[2] for x in ids])
         super(SpectrogramDataset, self).__init__(audio_conf, normalize, augment)
 
     def __getitem__(self, index):
