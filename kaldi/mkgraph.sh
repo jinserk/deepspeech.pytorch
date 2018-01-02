@@ -8,15 +8,6 @@ export PATH=$EESEN_ROOT/src/netbin:$EESEN_ROOT/src/netbin:$EESEN_ROOT/src/featbi
 export PATH=$EESEN_ROOT/tools/openfst/bin:$EESEN_ROOT/tools/irstlm/bin/:$PATH
 export LC_ALL=C
 
-model_dir="./aspire"
-lang_dir="$model_dir/data/lang_pp_test"
-out_dir="./graph"
-
-# move files required for training
-cp $lang_dir/words.txt $out_dir
-cp $lang_dir/phones.txt $out_dir
-cp $lang_dir/phones/align_lexicon.int $out_dir
-
 # aspire model directory check
 if [ ! -e $lang_dir ]; then
   mkdir -p $model_dir; cd $model_dir
@@ -32,8 +23,16 @@ if [ ! -e $lang_dir ]; then
 else
   echo "model directory already exists, skipping downloading"
 fi
- 
+
+model_dir="./aspire"
+lang_dir="$model_dir/data/lang_pp_test"
+out_dir="./graph"
+
+# move files required for training
 mkdir -p $out_dir
+cp $lang_dir/words.txt $out_dir
+cp $lang_dir/phones.txt $out_dir
+cp $lang_dir/phones/align_lexicon.int $out_dir
 
 # Get the full list of CTC tokens used in FST. These tokens include <eps>, the blank <blk>, the actual labels (e.g.,
 # phonemes), and the disambiguation symbols.  
@@ -44,7 +43,6 @@ phn_dir=$lang_dir/phones
   awk '{print $1 " " (NR-1)}' > $out_dir/tokens.txt
 
 # Compile the tokens into FST
-echo "generating token fst to T.fst"
 t_fst=$out_dir/T.fst
 t_tmp=$t_fst.$$
 trap "rm -f $t_tmp" EXIT HUP INT PIPE TERM
@@ -53,6 +51,7 @@ if [[ ! -s $t_fst ]]; then
     fstcompile --isymbols=$out_dir/tokens.txt --osymbols=$out_dir/tokens.txt \
     --keep_isymbols=false --keep_osymbols=false | fstarcsort --sort_type=olabel > $t_tmp || exit 1;
   mv $t_tmp $t_fst
+  echo "Composing decoding graph T.fst succeeded"
 fi
     
 # Compose the final decoding graph. The composition of L.fst and G.fst is determinized and minimized.
@@ -60,10 +59,13 @@ lg_fst=$out_dir/LG.fst
 lg_tmp=$lg_fst.$$
 trap "rm -f $lg_tmp" EXIT HUP INT PIPE TERM
 if [[ ! -s $lg_fst || $lg_fst -ot $lang_dir/G.fst || $lg_fst -ot $lang_dir/L_disambig.fst ]]; then
+  #fsttablecompose $lang_dir/L_disambig.fst $lang_dir/G.fst | fstdeterminizestar --use-log=true | \
+  #  fstminimizeencoded | fstpushspecial | fstarcsort --sort_type=ilabel > $lg_tmp || exit 1;
   fsttablecompose $lang_dir/L_disambig.fst $lang_dir/G.fst | fstdeterminizestar --use-log=true | \
-    fstminimizeencoded | fstpushspecial | fstarcsort --sort_type=ilabel > $lg_tmp || exit 1;
+    fstminimizeencoded | fstarcsort --sort_type=ilabel > $lg_tmp || exit 1;
   mv $lg_tmp $lg_fst
   fstisstochastic $lg_fst || echo "[info]: $lg_fst is not stochastic"
+  echo "Composing decoding graph LG.fst succeeded"
 fi
 
 if false; then

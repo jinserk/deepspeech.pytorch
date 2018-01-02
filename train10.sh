@@ -1,7 +1,7 @@
 #!/bin/bash
 
 store_path="models/20171229_train10_phn"
-#continue_from="models/20171226_train10_phn/deepspeech_checkpoint_epoch_001_iter_050000.pth.tar"
+continue_from="models/20171229_train10_phn/deepspeech_checkpoint_epoch_001_iter_050000.pth.tar"
 #continue_from="models/20171220_train10_all/deepspeech_001.pth.tar"
 
 cmd="python train.py \
@@ -9,7 +9,7 @@ cmd="python train.py \
 	--val data/manifests/val10.csv \
 	--sample_rate 8000 \
 	--augment \
-	--num_workers 8 \
+	--num_workers 10 \
 	--batch_size 32 \
 	--rnn_type lstm \
 	--hidden_size 512 \

@@ -13,7 +13,7 @@ from torch.autograd import Variable
 from warpctc_pytorch import CTCLoss
 from data.data_loader import AudioDataLoader, SpectrogramDataset, BucketingSampler
 from data.labeler import CharLabeler, PhoneLabeler
-from decoder import GreedyDecoder
+from decoder import GreedyDecoder, LatticeDecoder
 from model import DeepSpeech, supported_rnns
 
 sys.path.append('/home/jbaik/setup/pytorch/YellowFin_Pytorch/tuner_utils')
@@ -259,7 +259,11 @@ if __name__ == '__main__':
         #optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
         optimizer = get_optimizer(parameters, args)
 
-    decoder = GreedyDecoder(labeler)
+    if labeler.is_char():
+        decoder = GreedyDecoder(labeler)
+    else:
+        decoder = LatticeDecoder(labeler)
+
     train_dataset = SpectrogramDataset(audio_conf=audio_conf, manifest_filepath=args.train_manifest,
                                        labeler=labeler, count_label=True, normalize=True, augment=args.augment)
     #train_sampler = BucketingSampler(train_dataset, batch_size=args.batch_size)
@@ -401,8 +405,12 @@ if __name__ == '__main__':
                 seq_length = out.size(0)
                 sizes = input_percentages.mul_(int(seq_length)).int()
 
-                decoded_output, _ = decoder.decode(out.data, sizes)
-                target_strings = decoder.convert_to_strings(split_targets)
+                if labeler.is_char():
+                    decoded_output, _ = decoder.decode(out.data, sizes)
+                    target_strings = decoder.convert_to_strings(split_targets)
+                else: # if phone labeling, cer is used to count token error rate
+                    decoded_output, _ = decoder.decode_token(out.data, sizes, index_output=True)
+                    target_strings = decoder.greedy_check(split_targets, index_output=True)
                 wer, cer = 0, 0
                 for x in range(len(target_strings)):
                     transcript, reference = decoded_output[x][0], target_strings[x][0]

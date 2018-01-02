@@ -218,12 +218,12 @@ class LatticeDecoder(Decoder):
     def __init__(self, labeler):
         super(LatticeDecoder, self).__init__(labeler)
 
-    def greedy_check(self, sequences, sizes=None, remove_repetitions=False, return_offsets=False):
+    def greedy_check(self, sequences, sizes=None, remove_repetitions=False, return_offsets=False, index_output=False):
         phones_list = []
         offsets_list = [] if return_offsets else None
         for x in xrange(len(sequences)):
             seq_len = sizes[x] if sizes is not None else len(sequences[x])
-            phones, offsets = self.process_phone(sequences[x], seq_len, remove_repetitions)
+            phones, offsets = self.process_phone(sequences[x], seq_len, remove_repetitions, index_output)
             phones_list.append([phones])  # We only return one path
             if return_offsets:
                 offsets_list.append([offsets])
@@ -232,7 +232,7 @@ class LatticeDecoder(Decoder):
         else:
             return phones_list
 
-    def process_phone(self, sequence, size, remove_repetitions=False):
+    def process_phone(self, sequence, size, remove_repetitions=False, index_output=False):
         phones = []
         offsets = []
         for i in range(size):
@@ -242,26 +242,41 @@ class LatticeDecoder(Decoder):
                 if remove_repetitions and i != 0 and phone == sequence[i - 1]:
                     pass
                 else:
-                    phones.append(self.labeler.idx2label[phone])
+                    if index_output:
+                        phones.append(phone)
+                    else:
+                        phones.append(self.labeler.idx2label[phone])
                     offsets.append(i)
-        return phones, torch.IntTensor(offsets)
+        if index_output:
+            return torch.IntTensor(phones), torch.IntTensor(offsets)
+        else:
+            return phones, torch.IntTensor(offsets)
+
+    def decode_token(self, probs, sizes=None, index_output=False):
+        probs = probs.transpose(0, 1).contiguous()
+        _, max_probs = torch.max(probs, 2)
+        phones, offsets = self.greedy_check(max_probs.view(max_probs.size(0), max_probs.size(1)), sizes,
+                                            remove_repetitions=True, return_offsets=True, index_output=index_output)
+        if not index_output:
+            print(' '.join(phones[0][0]))
+        return phones, offsets
 
     def write_to_file(self, probs):
         priors = self.labeler.get_label_priors()
         feat = probs.log_().numpy() # log of probabilities
-        feat -= priors() # scaled likelihood
+        feat -= priors # scaled likelihood
+        print(feat)
+        print(torch.FloatTensor(feat[0][0]).exp_().sum())
         uttids = [f"utt{i:04d}" for i in range(len(feat))]
         ark_name, ptrs = tmpWriteArk(feat, uttids)
         scp_name = ark_name.replace(".ark", ".scp")
         writeScp(scp_name, uttids, ptrs)
         print(f"AM results has been written to {ark_name} and {scp_name}")
 
+
     def decode(self, probs, sizes=None):
-        _, max_probs = torch.max(probs.transpose(0, 1), 2)
-        phones, offsets = self.greedy_check(max_probs.view(max_probs.size(0), max_probs.size(1)), sizes,
-                                            remove_repetitions=True, return_offsets=True)
-        print(' '.join(phones[0][0]))
-        self.write_to_file(probs.cpu().transpose(0, 1).contiguous())
+        probs = probs.transpose(0, 1).contiguous()
+        self.write_to_file(probs.cpu())
 
         #return strings, offsets
 

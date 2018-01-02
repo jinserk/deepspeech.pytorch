@@ -141,7 +141,7 @@ class PhoneLabeler(Labeler):
         priors = np.array([prior_cutoff if c < prior_cutoff else c for c in priors])
         priors[0] *= blank_scale
         priors = np.log(priors / priors.sum()) * prior_scale
-        priors[zidx] = np.finfo('d').max / 2
+        priors[zidx] = 1e30 #np.finfo('d').max
         return priors
 
     def convert_trans_to_labels(self, text, blank=False):
