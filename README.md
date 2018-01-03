@@ -17,6 +17,11 @@ We assume you already have a working installation of this project and Kaldi. Als
 * &lt;KALDI\_PATH&gt; : the path you install Kaldi
 * &lt;DSPYT\_PATH&gt; : the path you install this project
 
+Modify the Kaldi installation path in `&lt;DSPYT\_PATH&gt;/kaldi/path.sh`
+```
+export KALDI_ROOT=`&lt;KALDI\_PATH&gt;`
+```
+
 Make a decoding graph by downloading [Kaldi's pretrained ASpIRE chain model](http://kaldi-asr.org/models.html):
 ```
 cd <DSPYT_PATH>/kaldi

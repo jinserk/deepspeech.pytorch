@@ -269,7 +269,7 @@ class LatticeDecoder(Decoder):
         print(f"AM results has been written to {ark_name} and {scp_name}")
 
 
-    def decode(self, probs, sizes=None, check=True):
+    def decode(self, probs, sizes=None, check=False):
         probs = probs.transpose(0, 1).contiguous()
         # log of probabilities
         feats = probs.log_()
