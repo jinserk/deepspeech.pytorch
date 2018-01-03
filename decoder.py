@@ -261,22 +261,31 @@ class LatticeDecoder(Decoder):
             print(' '.join(phones[0][0]))
         return phones, offsets
 
-    def write_to_file(self, probs):
-        priors = self.labeler.get_label_priors()
-        feat = probs.log_().numpy() # log of probabilities
-        feat -= priors # scaled likelihood
-        print(feat)
-        print(torch.FloatTensor(feat[0][0]).exp_().sum())
+    def write_to_file(self, feat):
         uttids = [f"utt{i:04d}" for i in range(len(feat))]
-        ark_name, ptrs = tmpWriteArk(feat, uttids)
+        ark_name, ptrs = tmpWriteArk(feat.numpy(), uttids)
         scp_name = ark_name.replace(".ark", ".scp")
         writeScp(scp_name, uttids, ptrs)
         print(f"AM results has been written to {ark_name} and {scp_name}")
 
 
-    def decode(self, probs, sizes=None):
+    def decode(self, probs, sizes=None, check=True):
         probs = probs.transpose(0, 1).contiguous()
-        self.write_to_file(probs.cpu())
+        # log of probabilities
+        feats = probs.log_()
+        # scaled likelihood
+        priors = torch.FloatTensor(self.labeler.get_label_priors())
+        feats -= priors
+        #eps = torch.zeros(feats.shape[0], feats.shape[1], 1)
+        #mod_feats = torch.cat((eps, feats), 2)
+
+        if check:
+            _, max_feats = torch.max(feats, 2)
+            phones, offsets = self.greedy_check(max_feats.view(max_feats.size(0), max_feats.size(1)), sizes,
+                                                remove_repetitions=False, return_offsets=True, index_output=False)
+            print(' '.join(phones[0][0]))
+
+        self.write_to_file(feats)
 
         #return strings, offsets
 

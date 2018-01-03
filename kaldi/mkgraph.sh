@@ -1,12 +1,6 @@
 #!/bin/bash
 
-# This script compiles the ARPA-formatted language models into FSTs. Finally it composes the LM, lexicon
-# and token FSTs together into the decoding graph.
-export EESEN_ROOT=$HOME/eesen
-
-export PATH=$EESEN_ROOT/src/netbin:$EESEN_ROOT/src/netbin:$EESEN_ROOT/src/featbin:$EESEN_ROOT/src/decoderbin:$EESEN_ROOT/src/fstbin:$EESEN_ROOT/src/lmbin:$PATH
-export PATH=$EESEN_ROOT/tools/openfst/bin:$EESEN_ROOT/tools/irstlm/bin/:$PATH
-export LC_ALL=C
+. ./path.sh
 
 # aspire model directory check
 if [ ! -e $lang_dir ]; then
@@ -48,7 +42,7 @@ t_tmp=$t_fst.$$
 trap "rm -f $t_tmp" EXIT HUP INT PIPE TERM
 if [[ ! -s $t_fst ]]; then
   ctc_token_fst.py $out_dir/tokens.txt | \
-    fstcompile --isymbols=$out_dir/tokens.txt --osymbols=$out_dir/tokens.txt \
+    fstcompile --isymbols=$out_dir/tokens.txt --osymbols=$out_dir/phones.txt \
     --keep_isymbols=false --keep_osymbols=false | fstarcsort --sort_type=olabel > $t_tmp || exit 1;
   mv $t_tmp $t_fst
   echo "Composing decoding graph T.fst succeeded"
@@ -59,10 +53,8 @@ lg_fst=$out_dir/LG.fst
 lg_tmp=$lg_fst.$$
 trap "rm -f $lg_tmp" EXIT HUP INT PIPE TERM
 if [[ ! -s $lg_fst || $lg_fst -ot $lang_dir/G.fst || $lg_fst -ot $lang_dir/L_disambig.fst ]]; then
-  #fsttablecompose $lang_dir/L_disambig.fst $lang_dir/G.fst | fstdeterminizestar --use-log=true | \
-  #  fstminimizeencoded | fstpushspecial | fstarcsort --sort_type=ilabel > $lg_tmp || exit 1;
   fsttablecompose $lang_dir/L_disambig.fst $lang_dir/G.fst | fstdeterminizestar --use-log=true | \
-    fstminimizeencoded | fstarcsort --sort_type=ilabel > $lg_tmp || exit 1;
+    fstminimizeencoded | fstpushspecial | fstarcsort --sort_type=ilabel > $lg_tmp || exit 1;
   mv $lg_tmp $lg_fst
   fstisstochastic $lg_fst || echo "[info]: $lg_fst is not stochastic"
   echo "Composing decoding graph LG.fst succeeded"
