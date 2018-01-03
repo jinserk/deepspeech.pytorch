@@ -6,6 +6,7 @@ to see how to install, prepare dataset, train or test.
 ## Modified Features
 
 * Using additional phase info of spectrogram, as well as its amplitude info as the CNN input
+* Replace RELU to Swish in CNN
 * Changing manifest csv file format to keep the length of wav file info to reduce its processing time
 * Add preparing code for LDC's fisher and swbd, and Mozilla's common voice datasets
 * Supports phone labeling and the lattice decoder using [Kaldi](https://github.com/kaldi-asr/kaldi.git) framework
@@ -16,9 +17,9 @@ We assume you already have a working installation of this project and Kaldi. Als
 * &lt;KALDI\_PATH&gt; : the path you install Kaldi
 * &lt;DSPYT\_PATH&gt; : the path you install this project
 
-Make a decoding graph by downloading [Kaldi's pretrained ASpIRE chain model](https://kaldi-asr.org/models.html):
+Make a decoding graph by downloading [Kaldi's pretrained ASpIRE chain model](http://kaldi-asr.org/models.html):
 ```
-cd <DSPYT_PATH>
+cd <DSPYT_PATH>/kaldi
 ./mkgraph.sh
 ```
 
