@@ -5,6 +5,7 @@ to see how to install, prepare dataset, train or test.
 
 ## Modified Features
 
+* supports only Python 3.6 or above
 * Using additional phase info of spectrogram, as well as its amplitude info as the CNN input
 * Replace RELU to Swish in CNN
 * Changing manifest csv file format to keep the length of wav file info to reduce its processing time
