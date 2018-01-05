@@ -99,7 +99,7 @@ if __name__ == '__main__':
 
             if labeler.is_char():
                 decoded_output, _, = decoder.decode(out.data, sizes)
-                target_strings = target_decoder.convert_to_strings(split_targets)
+                target_strings = decoder.convert_to_strings(split_targets)
                 for x in range(len(target_strings)):
                     transcript, reference = decoded_output[x][0], target_strings[x][0]
                     wer_inst = decoder.wer(transcript, reference) / float(len(reference.split()))
@@ -114,6 +114,7 @@ if __name__ == '__main__':
                 decoded_tokens, _ = decoder.decode_token(out.data, sizes, index_output=True)
                 decoded_output, _ = decoder.decode(out.data, sizes)
                 target_strings = decoder.greedy_check(split_targets, index_output=True)
+                print(split_targets)
                 for x in range(len(target_strings)):
                     transcript, tokens, reference = decoded_output[x][0], decoded_tokens[x][0], target_strings[x][0]
                     wer_inst = decoder.wer(transcript, reference) / float(len(reference.split()))

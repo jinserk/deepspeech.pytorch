@@ -79,11 +79,11 @@ def decode(loglikes):
 
     N, R, C = loglikes.shape
     c_texts = [ffi.new("char[]", 2048) for n in range(N)]
-    c_text_list = ffi.new("char **", c_texts)
+    c_text_list = ffi.new("char *[]", c_texts)
     c_words = [ffi.new("int[]", [-1]*R) for n in range(N)]
-    c_words_list = ffi.new("int **", c_words)
+    c_words_list = ffi.new("int *[]", c_words)
     c_alignments = [ffi.new("int[]", [-1]*R) for n in range(N)]
-    c_alignment_list = ffi.new("int **", c_alignments)
+    c_alignment_list = ffi.new("int *[]", c_alignments)
 
     _C.decode(c_loglikes, c_sizes, c_text_list, c_words_list, c_alignment_list)
 
