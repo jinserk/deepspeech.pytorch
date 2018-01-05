@@ -20,6 +20,7 @@ import torch
 import numpy as np
 from six.moves import xrange
 from kaldi.file_io import tmpWriteArk, writeScp
+from kaldi import latgen
 
 class Decoder(object):
     """
@@ -215,8 +216,10 @@ class GreedyDecoder(Decoder):
 
 
 class LatticeDecoder(Decoder):
-    def __init__(self, labeler):
+    def __init__(self, labeler, fst_file="kaldi/graph/TLG.fst", wd_file="kaldi/graph/words.txt"):
         super(LatticeDecoder, self).__init__(labeler)
+        latgen.initialize(beam=16.0, max_active=8000, min_active=200, acoustic_scale=1.0, allow_partial=True,
+                          fst_file=fst_file, wd_file=wd_file)
 
     def greedy_check(self, sequences, sizes=None, remove_repetitions=False, return_offsets=False, index_output=False):
         phones_list = []
@@ -261,32 +264,31 @@ class LatticeDecoder(Decoder):
             print(' '.join(phones[0][0]))
         return phones, offsets
 
-    def write_to_file(self, feat):
-        uttids = [f"utt{i:04d}" for i in range(len(feat))]
-        ark_name, ptrs = tmpWriteArk(feat.numpy(), uttids)
+    def write_to_file(self, loglikes):
+        uttids = [f"utt{i:04d}" for i in range(len(loglikes))]
+        ark_name, ptrs = tmpWriteArk(loglikes.numpy(), uttids)
         scp_name = ark_name.replace(".ark", ".scp")
         writeScp(scp_name, uttids, ptrs)
         print(f"AM results has been written to {ark_name} and {scp_name}")
-
+        return ark_name, scp_name
 
     def decode(self, probs, sizes=None, check=False):
         probs = probs.transpose(0, 1).contiguous()
         # log of probabilities
-        feats = probs.log_()
+        loglikes = probs.log_()
         # scaled likelihood
         priors = torch.FloatTensor(self.labeler.get_label_priors())
-        feats -= priors
+        loglikes -= priors
         #eps = torch.zeros(feats.shape[0], feats.shape[1], 1)
         #mod_feats = torch.cat((eps, feats), 2)
 
         if check:
-            _, max_feats = torch.max(feats, 2)
-            phones, offsets = self.greedy_check(max_feats.view(max_feats.size(0), max_feats.size(1)), sizes,
+            _, max_probs = torch.max(loglikes, 2)
+            phones, offsets = self.greedy_check(max_probs.view(max_probs.size(0), max_probs.size(1)), sizes,
                                                 remove_repetitions=False, return_offsets=True, index_output=False)
             print(' '.join(phones[0][0]))
 
-        self.write_to_file(feats)
-
-        #return strings, offsets
-
+        #ark, scp = self.write_to_file(loglikes)
+        strings, words, alignments = latgen.decode(loglikes.numpy())
+        return [strings], [alignments]
 

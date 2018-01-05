@@ -23,6 +23,7 @@ parser.add_argument('--audio_path', default='audio.wav',
 parser.add_argument('--cuda', action="store_true", help='Use cuda to test model')
 parser.add_argument('--decoder', default="greedy", choices=["greedy", "beam", "lattice"], type=str, help="Decoder to use")
 parser.add_argument('--offsets', dest='offsets', action='store_true', help='Returns time offset information')
+
 beam_args = parser.add_argument_group("Beam Decode Options", "Configurations options for the CTC Beam Search decoder")
 beam_args.add_argument('--top_paths', default=1, type=int, help='number of beams to return')
 beam_args.add_argument('--beam_width', default=10, type=int, help='Beam width to use')
@@ -38,6 +39,7 @@ beam_args.add_argument('--cutoff_top_n', default=40, type=int,
 beam_args.add_argument('--cutoff_prob', default=1.0, type=float,
                        help='Cutoff probability in pruning,default 1.0, no pruning.')
 beam_args.add_argument('--lm_workers', default=1, type=int, help='Number of LM processes to use')
+
 args = parser.parse_args()
 
 

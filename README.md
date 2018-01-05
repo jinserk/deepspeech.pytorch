@@ -8,18 +8,33 @@ to see how to install, prepare dataset, train or test.
 * Using additional phase info of spectrogram, as well as its amplitude info as the CNN input
 * Replace RELU to Swish in CNN
 * Changing manifest csv file format to keep the length of wav file info to reduce its processing time
-* Add preparing code for LDC's fisher and swbd, and Mozilla's common voice datasets
-* Supports phone labeling and the lattice decoder using [Kaldi](https://github.com/kaldi-asr/kaldi.git) framework
+* Add codes for LDC's fisher and swbd, and Mozilla's common voice datasets in `data`
+* Supports phone labeling to interface with lattice decoder based on [Kaldi](https://github.com/kaldi-asr/kaldi.git) framework
 
 # Installation
 
-We assume you already have a working installation of this project and Kaldi. Also we assume that:
-* &lt;KALDI\_PATH&gt; : the path you install Kaldi
-* &lt;DSPYT\_PATH&gt; : the path you install this project
+Assumed you already have each of proper clones in the following paths:
+* &lt;DSPYT\_PATH&gt; : the path to install this project
+* &lt;KALDI\_PATH&gt; : the path to install Kaldi
 
-Modify the Kaldi installation path in `&lt;DSPYT\_PATH&gt;/kaldi/path.sh`
+Install and compile Kaldi with shared library option:
 ```
-export KALDI_ROOT=`&lt;KALDI\_PATH&gt;`
+cd <KALDI_PATH>/tools
+make
+cd ../src
+configure --shared
+make
+```
+
+Modify the Kaldi installation path in `<DSPYT_PATH>/kaldi/path.sh`
+```
+export KALDI_ROOT=<KALDI_PATH>
+```
+
+Make `liblatgen.so`
+```
+cd <DSPYT_PATH>/kaldi
+make
 ```
 
 Make a decoding graph by downloading [Kaldi's pretrained ASpIRE chain model](http://kaldi-asr.org/models.html):
@@ -30,11 +45,14 @@ cd <DSPYT_PATH>/kaldi
 
 Train a manifest with `--phone` option. You can refer to [`train10.sh`](https://github.com/jinserk/deepspeech.pytorch/blob/master/train10.sh)
 
-Test with `--decoder lattice` option. You can refer to [`predict.sh`](https://github.com/jinserk/deepspeech.pytorch/blob/master/predict.sh)
+Test or predict with `--decoder lattice` option. You can refer to [`test10.sh`](https://github.com/jinserk/deepspeech.pytorch/blob/master/test10.sh)
 
-Currently the prediction by using lattice decoder is relying on the Kaldi's binary. We'll implement a python interface by using CFFI.
-You can test the result of lattice decoder by the following command:
-```
-. ./kaldi/path.sh
-decode-faster --max-active=10000 --beam=16 --acoustic-scale=1.0 --allow-partial=true --word-symbol-table=kaldi/graph/words.txt kaldi/graph/TLG.fst ark:/tmp/<tmp ark file generated from predict.sh> "ark:|gzip -c > ./lat.gz"
-```
+
+# What's different from EESEN or DeepSpeech2
+
+Basically the config using phone labeling is almost the same to [EESEN](https://github.com/srvk/eesen.git) except:
+* Utilizing DeepSpeech2 as an acoustic model, not using the G2P embedding from its end-to-end char labeling, and keeping its feature embedding with CNN layers
+* Used position-dependent-phones instead of position-independent-phones, so don't need to insert any word boundary symbol
+* TLG.fst can easily updated by `L_disambig.fst` and `G.fst` from any Kaldi recipes
+* Implemented on PyTorch, while EESEN is built on Tensorflow
+
