@@ -171,8 +171,8 @@ extern void decode(float *loglikes, int *sizes, char **texts, int **words, int *
 	std::vector<Matrix<BaseFloat> > loglikes_list;
 	std::vector<LatticeDecoderResult> results;
 
-	for (size_t i = 0; i < sizes[0]; i++)
-		loglikes_list.emplace_back(SubMatrix<BaseFloat>(loglikes, sizes[1], sizes[2], sizes[2]));
+	for (size_t i = 0, s = 0; i < sizes[0]; i++, s += sizes[1]*sizes[2])
+		loglikes_list.emplace_back(SubMatrix<BaseFloat>(loglikes + s, sizes[1], sizes[2], sizes[2]));
 
 	decoder.decode(loglikes_list, results);
 

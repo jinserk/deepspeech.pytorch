@@ -1,6 +1,6 @@
 #!/bin/bash
 
-model="models/20171229_train10_phn/deepspeech_checkpoint_epoch_013_iter_010000.pth.tar"
+model="models/20171229_train10_phn/deepspeech_checkpoint_epoch_017_iter_010000.pth.tar"
 #model="models/20171229_train10_phn/deepspeech_013.pth.tar"
 decoder="lattice"
 cuda="no"

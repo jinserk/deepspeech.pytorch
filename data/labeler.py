@@ -22,10 +22,11 @@ class Labeler(object):
             self.labels = package['labels']
             if 'label_map' in package:
                 self.label2idx = package['label_map']
-                self.idx2label = dict([(v, k) for (k, v) in self.label2idx.items()])
-            else:
+            elif 'label2idx' in package:
                 self.label2idx = package['label2idx']
-                self.idx2label = package['idx2label']
+            else:
+                raise IOError
+            self.idx2label = dict([(v, k) for (k, v) in self.label2idx.items()])
 
     def is_char(self):
         return True if self.type == 'chr' else False
@@ -45,7 +46,6 @@ class Labeler(object):
             'blank_index': self.blank_index,
             'labels': self.labels,
             'label2idx': self.label2idx,
-            'idx2label': self.idx2label,
         }
 
 
@@ -81,7 +81,13 @@ class PhoneLabeler(Labeler):
             self.load_lexicon(lexicon_file)
             self.label_counts = None
         else:
-            self.word_map = package['word_map']
+            if 'word_map' in package:
+                self.word2idx = package['word_map']
+            elif 'word2idx' in package:
+                self.word2idx = package['word2idx']
+            else:
+                raise IOError
+            self.idx2word = dict([(v, k) for (k, v) in self.word2idx.items()])
             self.lexicon_map = package['lexicon_map']
             self.label_counts = package['label_counts']
 
@@ -102,11 +108,13 @@ class PhoneLabeler(Labeler):
                 self.idx2label[label_index] = token[0]
 
     def load_dict(self, dict_file):
-        self.word_map = {}
+        self.word2idx = {}
+        self.idx2word = {}
         with open(dict_file, "r") as f:
             for line in f:
                 token = line.strip().split()
-                self.word_map[token[0]] = int(token[1])
+                self.word2idx[token[0]] = int(token[1])
+                self.idx2word[int(token[1])] = token[0]
 
     def load_lexicon(self, lexicon_file):
         self.lexicon_map = {}
@@ -147,7 +155,7 @@ class PhoneLabeler(Labeler):
     def convert_trans_to_labels(self, text, blank=False):
         labels = [self.blank_index] if blank else []
         for word in text.strip().split():
-            wid = self.word_map[word] if word in self.word_map else self.word_map['<unk>']
+            wid = self.word2idx[word] if word in self.word2idx else self.word2idx['<unk>']
             try:
                 if blank:
                     for c in self.lexicon_map[wid]:
@@ -159,23 +167,38 @@ class PhoneLabeler(Labeler):
                 raise
         return labels
 
+    def convert_labels_to_trans(self, indices):
+        try:
+            trans = [self.idx2word[idx] for idx in indices]
+        except:
+            print(f"no such index = {idx} exists on dictionary")
+            raise
+        return ' '.join(trans)
+
     def load_package(self, package):
         self.type = package['type']
         self.labels = package['labels']
         if 'label_map' in package:
             self.label2idx = package['label_map']
-            self.idx2label = dict([(v, k) for (k, v) in self.label2idx.items()])
-        else:
+        elif 'label2idx' in package:
             self.label2idx = package['label2idx']
-            self.idx2label = package['idx2label']
-        self.word_map = package['word_map']
+        else:
+            raise IOError
+        self.idx2label = dict([(v, k) for (k, v) in self.label2idx.items()])
+        if 'word_map' in package:
+            self.word2idx = package['word_map']
+        elif 'word2idx' in package:
+            self.word2idx = package['word2idx']
+        else:
+            raise IOError
+        self.idx2word = dict([(v, k) for (k, v) in self.word2idx.items()])
         self.lexicon_map = package['lexicon_map']
         self.label_counts = package['label_counts']
 
     def serialize(self):
         ret = super().serialize()
         ret.update({
-            'word_map': self.word_map,
+            'word2idx': self.word2idx,
             'lexicon_map': self.lexicon_map,
             'label_counts': self.label_counts,
         })

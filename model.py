@@ -245,11 +245,12 @@ class DeepSpeech(nn.Module):
         return model
 
     @classmethod
-    def load_model_package(cls, package, cuda=False):
-        if package['labeler']['type'] == 'chr':
-            labeler = CharLabeler(package=package['labeler'])
-        else:
-            labeler = PhoneLabeler(package=package['labeler'])
+    def load_model_package(cls, package, cuda=False, labeler=None):
+        if labeler is None:
+            if package['labeler']['type'] == 'chr':
+                labeler = CharLabeler(package=package['labeler'])
+            else:
+                labeler = PhoneLabeler(package=package['labeler'])
         model = cls(rnn_hidden_size=package['hidden_size'], nb_layers=package['hidden_layers'],
                     labeler=labeler, audio_conf=package['audio_conf'],
                     rnn_type=supported_rnns[package['rnn_type']], bidirectional=package.get('bidirectional', True))

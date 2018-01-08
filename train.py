@@ -36,6 +36,7 @@ parser.add_argument('--rnn_type', default='lstm', help='Type of the RNN. rnn|gru
 parser.add_argument('--epochs', default=50, type=int, help='Number of training epochs')
 parser.add_argument('--cuda', dest='cuda', action='store_true', help='Use cuda to train model')
 parser.add_argument('--phone', dest='phone', action='store_true', help='Use phone labels instead of char labels')
+parser.add_argument('--label_file', default='./labels.json', help='path of lable units file')
 parser.add_argument('--optim', default='sgd', type=str, help='Optimization method')
 parser.add_argument('--optim_restart', dest='optim_restart', action='store_true', help='Optimization restart if continute_from exists')
 parser.add_argument('--lr', '--learning-rate', default=3e-4, type=float, help='initial learning rate')
@@ -75,11 +76,7 @@ parser.add_argument('--no_shuffle', dest='no_shuffle', action='store_true',
 parser.add_argument('--no_bidirectional', dest='bidirectional', action='store_false', default=True,
                     help='Turn off bi-directional RNNs, introduces lookahead convolution')
 
-char_args = parser.add_argument_group("Character Labeling Options", "Configurations options for the character labeling")
-char_args.add_argument('--label_file', default='./labels.json', help='path of lable units file')
-
 phn_args = parser.add_argument_group("Phone Labeling Options", "Configurations options for the phone labeling")
-phn_args.add_argument('--label_file', default='./kaldi/graph/labels.txt', help='path of label units file')
 phn_args.add_argument('--dict_file', default="./kaldi/graph/words.txt", help = "path of word dict file")
 phn_args.add_argument('--lexicon_file', default="./kaldi/graph/align_lexicon.int", help = "path of lexicon file")
 
@@ -189,8 +186,12 @@ if __name__ == '__main__':
     if args.continue_from:  # Starting from previous model
         log.info("Loading checkpoint model %s" % args.continue_from)
         package = torch.load(args.continue_from, map_location=lambda storage, loc: storage)
-        model = DeepSpeech.load_model_package(package)
-        labeler = DeepSpeech.get_labeler(model)
+        try:
+            model = DeepSpeech.load_model_package(package)
+            labeler = DeepSpeech.get_labeler(model)
+        except:
+            labeler = CharLabeler(label_file=args.label_file)
+            model = DeepSpeech.load_model_package(package, labeler=labeler)
         audio_conf = DeepSpeech.get_audio_conf(model)
         parameters = model.parameters()
         #optimizer = torch.optim.SGD(parameters, lr=args.lr, momentum=args.momentum, nesterov=True)
@@ -311,7 +312,7 @@ if __name__ == '__main__':
         for i, (data) in enumerate(train_loader, start=start_iter):
             if i == len(train_sampler):
                 break
-            inputs, targets, input_percentages, target_sizes = data
+            inputs, targets, transcripts, input_percentages, target_sizes = data
             # measure data loading time
             data_time.update(time.time() - end)
             inputs = Variable(inputs, requires_grad=False)
@@ -391,7 +392,7 @@ if __name__ == '__main__':
         total_cer, total_wer = 0, 0
         model.eval()
         for i, (data) in tqdm(enumerate(test_loader), total=len(test_loader)):
-            inputs, targets, input_percentages, target_sizes = data
+            inputs, targets, transcripts, input_percentages, target_sizes = data
 
             #inputs = Variable(inputs, volatile=True)
             inputs = Variable(inputs)

@@ -69,7 +69,7 @@ if __name__ == '__main__':
     total_cer, total_wer = 0, 0
     output_data = []
     for i, (data) in tqdm(enumerate(test_loader), total=len(test_loader)):
-        inputs, targets, input_percentages, target_sizes = data
+        inputs, targets, transcripts, input_percentages, target_sizes = data
 
         #inputs = Variable(inputs, volatile=True)
         inputs = Variable(inputs)
@@ -99,9 +99,9 @@ if __name__ == '__main__':
 
             if labeler.is_char():
                 decoded_output, _, = decoder.decode(out.data, sizes)
-                target_strings = decoder.convert_to_strings(split_targets)
-                for x in range(len(target_strings)):
-                    transcript, reference = decoded_output[x][0], target_strings[x][0]
+                #target_strings = decoder.convert_to_strings(split_targets)
+                for x in range(len(transcripts)):
+                    transcript, reference = decoded_output[x][0], transcripts[x]
                     wer_inst = decoder.wer(transcript, reference) / float(len(reference.split()))
                     cer_inst = decoder.cer(transcript, reference) / float(len(reference))
                     wer += wer_inst
@@ -113,12 +113,12 @@ if __name__ == '__main__':
             else: # if phone labeling, cer is used to count token error rate
                 decoded_tokens, _ = decoder.decode_token(out.data, sizes, index_output=True)
                 decoded_output, _ = decoder.decode(out.data, sizes)
-                target_strings = decoder.greedy_check(split_targets, index_output=True)
-                print(split_targets)
-                for x in range(len(target_strings)):
-                    transcript, tokens, reference = decoded_output[x][0], decoded_tokens[x][0], target_strings[x][0]
+                #target_tokens = decoder.greedy_check(split_targets, index_output=True)
+                for x in range(len(transcripts)):
+                    tokens, ref_tokens = decoded_tokens[x][0], split_targets[x]
+                    transcript, reference = decoded_output[x][0], transcripts[x]
                     wer_inst = decoder.wer(transcript, reference) / float(len(reference.split()))
-                    cer_inst = decoder.cer(tokens, reference) / float(len(reference))
+                    cer_inst = decoder.cer(tokens, ref_tokens) / float(len(ref_tokens))
                     wer += wer_inst
                     cer += cer_inst
                     if args.verbose:

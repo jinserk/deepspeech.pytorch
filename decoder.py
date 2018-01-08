@@ -290,5 +290,5 @@ class LatticeDecoder(Decoder):
 
         #ark, scp = self.write_to_file(loglikes)
         strings, words, alignments = latgen.decode(loglikes.numpy())
-        return [strings], [alignments]
+        return strings, alignments
 
