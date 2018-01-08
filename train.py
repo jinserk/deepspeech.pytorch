@@ -409,21 +409,31 @@ if __name__ == '__main__':
                 seq_length = out.size(0)
                 sizes = input_percentages.mul_(int(seq_length)).int()
 
+                wer, cer = 0, 0
+
                 if labeler.is_char():
                     decoded_output, _ = decoder.decode(out.data, sizes)
-                    target_strings = decoder.convert_to_strings(split_targets)
+                    #target_strings = decoder.convert_to_strings(split_targets)
+                    for x in range(len(transcripts)):
+                        transcript, reference = decoded_output[x][0], transcripts[x]
+                        wer_inst = decoder.wer(transcript, reference) / float(len(reference.split()))
+                        cer_inst = decoder.cer(transcript, reference) / float(len(reference))
+                        wer += wer_inst
+                        cer += cer_inst
                 else: # if phone labeling, cer is used to count token error rate
-                    decoded_output, _ = decoder.decode_token(out.data, sizes, index_output=True)
-                    target_strings = decoder.greedy_check(split_targets, index_output=True)
-                wer, cer = 0, 0
-                for x in range(len(target_strings)):
-                    transcript, reference = decoded_output[x][0], target_strings[x][0]
-                    cer += decoder.cer(transcript, reference) / float(len(reference))
-                    if labeler.is_char():
-                        wer += decoder.wer(transcript, reference) / float(len(reference.split()))
+                    decoded_tokens, _ = decoder.decode_token(out.data, sizes, index_output=True)
+                    #decoded_output, _ = decoder.decode(out.data, sizes)
+                    #target_tokens = decoder.greedy_check(split_targets, index_output=True)
+                    for x in range(len(transcripts)):
+                        tokens, ref_tokens = decoded_tokens[x][0], split_targets[x]
+                        #transcript, reference = decoded_output[x][0], transcripts[x]
+                        #wer_inst = decoder.wer(transcript, reference) / float(len(reference.split()))
+                        cer_inst = decoder.cer(tokens, ref_tokens) / float(len(ref_tokens))
+                        #wer += wer_inst
+                        cer += cer_inst
+
                 total_cer += cer
                 total_wer += wer
-
                 if args.cuda:
                     torch.cuda.synchronize()
                 del out

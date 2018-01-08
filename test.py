@@ -128,13 +128,17 @@ if __name__ == '__main__':
 
             total_cer += cer
             total_wer += wer
+            if args.cuda:
+                torch.cuda.synchronize()
+            del out
 
     if decoder is not None:
         wer = total_wer / len(test_loader.dataset)
         cer = total_cer / len(test_loader.dataset)
-
-        print('Test Summary \t'
-              'Average WER {wer:.3f}\t'
-              'Average CER {cer:.3f}\t'.format(wer=wer * 100, cer=cer * 100))
+        cer *= 100
+        wer *= 100
+        print('Test Summary  '
+              'Average WER {wer:7.3f}  '
+              'Average CER {cer:7.3f}  '.format(wer=wer, cer=cer))
     else:
         np.save(args.output_path, output_data)
