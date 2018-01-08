@@ -222,10 +222,13 @@ class DeepSpeech(nn.Module):
     @classmethod
     def load_model(cls, path, cuda=False):
         package = torch.load(path, map_location=lambda storage, loc: storage)
-        if package['labeler']['type'] == 'chr':
-            labeler = CharLabeler(package=package['labeler'])
-        else:
-            labeler = PhoneLabeler(package=package['labeler'])
+        try:
+            if package['labeler']['type'] == 'chr':
+                labeler = CharLabeler(package=package['labeler'])
+            else:
+                labeler = PhoneLabeler(package=package['labeler'])
+        except:
+            labeler = CharLabeler(package=package)
         model = cls(rnn_hidden_size=package['hidden_size'], nb_layers=package['hidden_layers'],
                     labeler=labeler, audio_conf=package['audio_conf'],
                     rnn_type=supported_rnns[package['rnn_type']], bidirectional=package.get('bidirectional', True))
@@ -247,10 +250,13 @@ class DeepSpeech(nn.Module):
     @classmethod
     def load_model_package(cls, package, cuda=False, labeler=None):
         if labeler is None:
-            if package['labeler']['type'] == 'chr':
-                labeler = CharLabeler(package=package['labeler'])
-            else:
-                labeler = PhoneLabeler(package=package['labeler'])
+            try:
+                if package['labeler']['type'] == 'chr':
+                    labeler = CharLabeler(package=package['labeler'])
+                else:
+                    labeler = PhoneLabeler(package=package['labeler'])
+            except:
+                labeler = CharLabeler(package=package)
         model = cls(rnn_hidden_size=package['hidden_size'], nb_layers=package['hidden_layers'],
                     labeler=labeler, audio_conf=package['audio_conf'],
                     rnn_type=supported_rnns[package['rnn_type']], bidirectional=package.get('bidirectional', True))
@@ -341,10 +347,10 @@ if __name__ == '__main__':
     print("  RNN Type:         ", model._rnn_type.__name__.lower())
     print("  RNN Layers:       ", model._hidden_layers)
     print("  RNN Size:         ", model._hidden_size)
-    print("  Classes:          ", len(model._labels))
+    print("  Classes:          ", len(model._labeler.labels))
     print("")
     print("Model Features")
-    print("  Labels:           ", model._labeler.labels)
+    print("  Labeler:          ", model._labeler)
     print("  Sample Rate:      ", model._audio_conf.get("sample_rate", "n/a"))
     print("  Window Type:      ", model._audio_conf.get("window", "n/a"))
     print("  Window Size:      ", model._audio_conf.get("window_size", "n/a"))

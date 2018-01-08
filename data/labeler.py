@@ -16,7 +16,7 @@ class Labeler(object):
             self.labels = list()
             self.label2idx = dict()
             self.idx2label = dict()
-        else:
+        elif 'type' in package:
             self.type = package['type']
             self.blank_index = package['blank_index']
             self.labels = package['labels']
@@ -26,6 +26,12 @@ class Labeler(object):
                 self.label2idx = package['label2idx']
             else:
                 raise IOError
+            self.idx2label = dict([(v, k) for (k, v) in self.label2idx.items()])
+        else:
+            self.type = 'chr'
+            self.blank_index = 0
+            self.labels = package['labels']
+            self.label2idx = dict([(self.labels[i], i) for i in range(len(self.labels))])
             self.idx2label = dict([(v, k) for (k, v) in self.label2idx.items()])
 
     def is_char(self):
